@@ -31,6 +31,18 @@ export const systemRoutes: AppRouteRecord = {
       }
     },
     {
+      path: 'role-auth/user/:roleId',
+      name: 'RoleAuthUser',
+      component: '/system/role/auth-user',
+      meta: {
+        title: '角色分配用户',
+        isHide: true,
+        isHideTab: true,
+        keepAlive: true,
+        roles: ['R_SUPER']
+      }
+    },
+    {
       path: 'dept',
       name: 'Dept',
       component: '/system/dept',

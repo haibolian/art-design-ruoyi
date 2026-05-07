@@ -1,34 +1,35 @@
 <template>
   <div class="art-full-height">
-    <ProTable
-      ref="proTableRef"
-      :request="fetchGetRoleList"
-      :columns="columns"
-      :use-table-options="{ apiParams: { current: 1, size: 20 } }"
-      actions="edit,del,view"
-    >
+    <ProTable ref="proTableRef" :request="fetchGetRoleList" :columns="columns">
       <template #toolbar-left="{ selectedRows }">
         <ElSpace wrap>
-          <ElButton v-auth="'system:role:add'" @click="showDialog('add')" v-ripple
-            >新增角色</ElButton
-          >
+          <ElButton v-auth="'system:role:add'" @click="showDialog('add')" v-ripple>
+            新增角色
+          </ElButton>
           <ElButton
             v-auth="'system:role:remove'"
             :disabled="selectedRows.length === 0"
             @click="deleteRole()"
             v-ripple
           >
-            批量删除
+            删除
           </ElButton>
+          <ElButton v-auth="'system:role:export'" @click="exportRole" v-ripple>导出</ElButton>
         </ElSpace>
       </template>
     </ProTable>
 
     <RoleEditDialog
-      v-model="dialogVisible"
-      :dialog-type="dialogType"
-      :role-data="currentRoleData"
+      v-model:visible="dialogVisible"
+      :type="dialogType"
+      :role-id="currentRoleId"
       @success="handleDialogSuccess"
+    />
+
+    <RoleDataScopeDialog
+      v-model:visible="dataScopeVisible"
+      :role-id="currentDataScopeRoleId"
+      @success="handleDataScopeSuccess"
     />
   </div>
 </template>
@@ -36,23 +37,33 @@
 <script setup lang="ts">
   import ArtButtonTable from '@/components/core/forms/art-button-table/index.vue'
   import ArtDictTag from '@/components/core/display/art-dict-tag/index.vue'
-  import { useAuth } from '@/hooks/core/useAuth'
-  import { fetchChangeRoleStatus, fetchDeleteRole, fetchGetRoleList } from '@/api/system-manage'
-  import type { ProTableColumn, ProTableExpose } from '@/types/component'
   import { DICT_TYPE } from '@/types'
+  import type { ProTableColumn, ProTableExpose } from '@/types/component'
+  import {
+    fetchChangeRoleStatus,
+    fetchDeleteRole,
+    fetchExportRole,
+    fetchGetRoleList
+  } from '@/api/system/role'
+  import { useAuth } from '@/hooks/core/useAuth'
+  import RoleDataScopeDialog from './modules/role-data-scope-dialog.vue'
   import RoleEditDialog from './modules/role-edit-dialog.vue'
-  import { ElMessageBox, ElSwitch } from 'element-plus'
 
   defineOptions({ name: 'Role' })
 
   type RoleListItem = Api.SystemManage.RoleListItem
+  type DialogType = 'add' | 'edit'
 
   const { hasAuth } = useAuth()
+  const route = useRoute()
+  const router = useRouter()
 
   const proTableRef = ref<ProTableExpose<RoleListItem> | null>(null)
   const dialogVisible = ref(false)
-  const dialogType = ref<'add' | 'edit'>('add')
-  const currentRoleData = ref<RoleListItem | undefined>(undefined)
+  const dataScopeVisible = ref(false)
+  const dialogType = ref<DialogType>('add')
+  const currentRoleId = ref<number | null>(null)
+  const currentDataScopeRoleId = ref<number | null>(null)
 
   const columns: ProTableColumn<RoleListItem, Api.SystemManage.RoleSearchParams>[] = [
     { type: 'selection' },
@@ -67,14 +78,22 @@
       prop: 'roleName',
       label: '角色名称',
       minWidth: 140,
-      search: true,
+      search: {
+        props: {
+          placeholder: '请输入角色名称'
+        }
+      },
       formatter: (row) => row.roleName || '-'
     },
     {
       prop: 'roleKey',
       label: '权限字符',
       minWidth: 160,
-      search: true,
+      search: {
+        props: {
+          placeholder: '请输入权限字符'
+        }
+      },
       formatter: (row) => row.roleKey || row.roleCode || '-'
     },
     {
@@ -88,7 +107,11 @@
       label: '状态',
       width: 120,
       dictType: DICT_TYPE.NORMAL_DISABLE,
-      search: true,
+      search: {
+        props: {
+          placeholder: '请选择状态'
+        }
+      },
       cellRender: (row) => {
         if (!hasAuth('system:role:edit')) {
           return h(ArtDictTag, {
@@ -110,23 +133,60 @@
       }
     },
     {
+      prop: 'createTimeRange',
+      label: '创建时间',
+      hideInTable: true,
+      search: {
+        type: 'daterange',
+        props: {
+          valueFormat: 'YYYY-MM-DD',
+          startPlaceholder: '开始日期',
+          endPlaceholder: '结束日期'
+        },
+        transform: (value) => {
+          const range = Array.isArray(value) ? value : []
+          return {
+            params: {
+              beginTime: range[0],
+              endTime: range[1]
+            }
+          }
+        }
+      }
+    },
+    {
       prop: 'createTime',
       label: '创建时间',
-      minWidth: 160,
+      minWidth: 170,
       formatter: (row) => row.createTime || '-'
     },
     {
+      prop: 'operation',
       label: '操作',
-      width: 130,
+      width: 220,
       fixed: 'right',
       cellRender: (row) => {
-        const actions = []
+        const actions: any[] = []
 
         if (hasAuth('system:role:edit') && row.roleId !== 1) {
           actions.push(
             h(ArtButtonTable, {
               type: 'edit',
               onClick: () => showDialog('edit', row)
+            })
+          )
+          actions.push(
+            h(ArtButtonTable, {
+              icon: 'ri:database-2-line',
+              iconClass: 'bg-warning/12 text-warning',
+              onClick: () => openDataScopeDialog(row)
+            })
+          )
+          actions.push(
+            h(ArtButtonTable, {
+              icon: 'ri:user-shared-line',
+              iconClass: 'bg-info/12 text-info',
+              onClick: () => openRoleAuthUser(row)
             })
           )
         }
@@ -140,27 +200,67 @@
           )
         }
 
-        if (actions.length === 0) {
-          return '-'
-        }
-
-        return h('div', actions)
+        return actions.length > 0 ? h('div', actions) : '-'
       }
     }
   ]
 
-  const showDialog = (type: 'add' | 'edit', row?: RoleListItem) => {
+  const showDialog = (type: DialogType, row?: RoleListItem) => {
     dialogType.value = type
-    currentRoleData.value = row
+    currentRoleId.value = row?.roleId ?? null
     dialogVisible.value = true
   }
 
+  const openDataScopeDialog = (row: RoleListItem) => {
+    currentDataScopeRoleId.value = row.roleId ?? null
+    dataScopeVisible.value = true
+  }
+
+  const ensureRoleAuthUserRoute = () => {
+    if (router.hasRoute('RoleAuthUser')) {
+      return
+    }
+
+    const parentRouteName = route.matched[0]?.name
+    if (!parentRouteName) {
+      throw new Error('未找到角色管理父级路由，无法注册分配用户路由')
+    }
+
+    router.addRoute(parentRouteName, {
+      path: 'role-auth/user/:roleId',
+      name: 'RoleAuthUser',
+      component: () => import('./auth-user.vue'),
+      meta: {
+        title: '角色分配用户',
+        isHide: true,
+        isHideTab: true,
+        keepAlive: true,
+        roles: ['R_SUPER']
+      }
+    })
+  }
+
+  const openRoleAuthUser = async (row: RoleListItem) => {
+    if (typeof row.roleId !== 'number') return
+    ensureRoleAuthUserRoute()
+    await router.push({ name: 'RoleAuthUser', params: { roleId: row.roleId } })
+  }
+
+  const getSelectedRoleIds = (row?: RoleListItem) => {
+    if (row?.roleId) {
+      return [row.roleId]
+    }
+
+    const selectedRows = proTableRef.value?.selectedRows as
+      | RoleListItem[]
+      | { value: RoleListItem[] }
+      | undefined
+    const rows = Array.isArray(selectedRows) ? selectedRows : selectedRows?.value || []
+    return rows.map((item) => item.roleId).filter((id): id is number => typeof id === 'number')
+  }
+
   const deleteRole = async (row?: RoleListItem) => {
-    const ids = row?.roleId
-      ? [row.roleId]
-      : (proTableRef.value?.selectedRows ?? [])
-          .map((item: RoleListItem) => item.roleId)
-          .filter(Boolean)
+    const ids = getSelectedRoleIds(row)
     if (ids.length === 0) {
       ElMessage.warning('请先选择需要删除的角色')
       return
@@ -176,7 +276,7 @@
           type: 'warning'
         }
       )
-      await fetchDeleteRole(ids as number[])
+      await fetchDeleteRole(ids)
       ElMessage.success('删除成功')
       await proTableRef.value?.refreshRemove()
     } catch (error) {
@@ -204,15 +304,55 @@
       ElMessage.success(`${actionText}成功`)
     } catch (error) {
       row.status = prevStatus
-      if (error === 'cancel' || error === 'close') {
-        return
-      }
+      if (error === 'cancel' || error === 'close') return
       throw error
     }
   }
 
+  const getCurrentExportParams = (): Api.SystemManage.RoleSearchParams => {
+    const exposedModel = proTableRef.value?.searchModel as
+      | Record<string, any>
+      | { value: Record<string, any> }
+      | undefined
+    const model = exposedModel && 'value' in exposedModel ? exposedModel.value : exposedModel || {}
+    const params: Api.SystemManage.RoleSearchParams = {}
+
+    if (model.roleName) params.roleName = model.roleName
+    if (model.roleKey) params.roleKey = model.roleKey
+    if (model.status) params.status = model.status
+
+    const range = Array.isArray(model.createTimeRange) ? model.createTimeRange : []
+    if (range.length === 2) {
+      params.params = {
+        beginTime: range[0],
+        endTime: range[1]
+      }
+    }
+
+    return params
+  }
+
+  const saveBlob = (blob: Blob, fileName: string) => {
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = fileName
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const exportRole = async () => {
+    const blob = await fetchExportRole(getCurrentExportParams())
+    saveBlob(blob, `role_${Date.now()}.xlsx`)
+  }
+
   const handleDialogSuccess = async () => {
     dialogVisible.value = false
+    await proTableRef.value?.refreshData()
+  }
+
+  const handleDataScopeSuccess = async () => {
+    dataScopeVisible.value = false
     await proTableRef.value?.refreshData()
   }
 </script>

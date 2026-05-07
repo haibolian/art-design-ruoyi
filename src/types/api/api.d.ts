@@ -282,8 +282,31 @@ declare namespace Api {
 
     /** 角色菜单树响应 */
     interface RoleMenuTreeResponse {
-      checkedKeys: number[]
-      menus: TreeSelectNode[]
+      checkedKeys?: number[]
+      menus?: TreeSelectNode[]
+      [key: string]: any
+    }
+
+    /** 角色部门树响应 */
+    interface RoleDeptTreeResponse {
+      checkedKeys?: number[]
+      depts?: TreeSelectNode[]
+      [key: string]: any
+    }
+
+    /** 角色授权用户查询参数 */
+    interface RoleAuthUserSearchParams extends Partial<Api.Common.CommonSearchParams> {
+      roleId?: number | string
+      userName?: string
+      phonenumber?: string
+      [key: string]: any
+    }
+
+    /** 角色授权用户操作参数 */
+    interface RoleAuthUserPayload {
+      roleId: number | string
+      userId?: number | string
+      userIds?: string
       [key: string]: any
     }
 
