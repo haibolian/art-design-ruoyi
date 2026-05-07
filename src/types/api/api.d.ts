@@ -368,6 +368,12 @@ declare namespace Api {
     /** 部门新增/编辑参数 */
     type DeptPayload = Partial<DeptListItem>
 
+    /** 部门排序参数 */
+    interface DeptSortPayload {
+      deptIds: string
+      orderNums: string
+    }
+
     /** 岗位分页查询参数 */
     interface PostSearchParams extends Partial<Api.Common.CommonSearchParams> {
       postCode?: string

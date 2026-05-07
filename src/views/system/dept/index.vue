@@ -1,41 +1,25 @@
 <template>
-  <div class="dept-page art-full-height">
-    <ArtSearchBar
-      v-model="searchForm"
-      :items="searchItems"
-      :showExpand="false"
-      @reset="handleReset"
-      @search="loadDeptList"
-    />
-
-    <ElCard class="art-table-card" shadow="never">
-      <ArtTableToolbar
-        :showZebra="false"
-        :loading="loading"
-        v-model:columns="columnChecks"
-        @refresh="loadDeptList"
-      >
-        <template #left>
-          <ElSpace wrap>
-            <ElButton v-auth="'system:dept:add'" @click="openAddDialog()" v-ripple>
-              新增部门
-            </ElButton>
-            <ElButton @click="toggleExpand" v-ripple>{{ isExpanded ? '收起' : '展开' }}</ElButton>
-          </ElSpace>
-        </template>
-      </ArtTableToolbar>
-
-      <ArtTable
-        :key="tableKey"
-        rowKey="deptId"
-        :loading="loading"
-        :data="deptList"
-        :columns="columns"
-        :stripe="false"
-        :default-expand-all="isExpanded"
-        :tree-props="{ children: 'children', hasChildren: 'hasChildren' }"
-      />
-    </ElCard>
+  <div class="art-full-height">
+    <ProTable
+      :key="tableKey"
+      ref="proTableRef"
+      row-key="deptId"
+      :request="requestDeptList"
+      :columns="columns"
+      :table-props="tableProps"
+      :pagination-options="{ hideOnSinglePage: true }"
+      :use-table-options="{ responseAdapter: deptResponseAdapter, onSuccess: handleTableSuccess }"
+    >
+      <template #toolbar-left>
+        <ElSpace wrap>
+          <ElButton v-auth="'system:dept:add'" @click="openAddDialog()" v-ripple>
+            新增部门
+          </ElButton>
+          <ElButton v-auth="'system:dept:edit'" @click="saveSort" v-ripple>保存排序</ElButton>
+          <ElButton @click="toggleExpand" v-ripple>{{ isExpanded ? '收起' : '展开' }}</ElButton>
+        </ElSpace>
+      </template>
+    </ProTable>
 
     <ElDialog
       :model-value="dialogVisible"
@@ -69,19 +53,19 @@
 <script setup lang="ts">
   import ArtButtonTable from '@/components/core/forms/art-button-table/index.vue'
   import ArtForm, { type FormItem } from '@/components/core/forms/art-form/index.vue'
-  import ArtDictTag from '@/components/core/display/art-dict-tag/index.vue'
-  import { useTableColumns } from '@/hooks/core/useTableColumns'
-  import { useAuth } from '@/hooks/core/useAuth'
   import { DICT_TYPE } from '@/types'
-  import { ElMessageBox, type FormRules } from 'element-plus'
+  import type { ProTableColumn, ProTableExpose } from '@/types/component'
+  import { useAuth } from '@/hooks/core/useAuth'
   import {
     fetchAddDept,
     fetchDeleteDept,
     fetchGetDeptDetail,
     fetchGetDeptList,
     fetchGetDeptListExcludeChild,
-    fetchUpdateDept
-  } from '@/api/system-manage'
+    fetchUpdateDept,
+    fetchUpdateDeptSort
+  } from '@/api/system/dept'
+  import { ElInputNumber, ElMessageBox, type FormRules } from 'element-plus'
 
   defineOptions({ name: 'Dept' })
 
@@ -90,21 +74,16 @@
 
   const { hasAuth } = useAuth()
 
-  const loading = ref(false)
-  const formLoading = ref(false)
-  const submitLoading = ref(false)
+  const proTableRef = ref<ProTableExpose<DeptListItem> | null>(null)
+  const formRef = ref<InstanceType<typeof ArtForm>>()
   const dialogVisible = ref(false)
   const dialogMode = ref<DialogMode>('add')
-  const tableKey = ref(0)
-  const isExpanded = ref(true)
-  const deptList = ref<DeptListItem[]>([])
+  const formLoading = ref(false)
+  const submitLoading = ref(false)
   const deptOptions = ref<DeptListItem[]>([])
-  const formRef = ref<InstanceType<typeof ArtForm>>()
-
-  const searchForm = reactive<Api.SystemManage.DeptQueryParams>({
-    deptName: undefined,
-    status: undefined
-  })
+  const isExpanded = ref(true)
+  const tableKey = ref(0)
+  const originalOrders = ref<Record<number, number | string | undefined>>({})
 
   const createDefaultForm = (): Api.SystemManage.DeptPayload => ({
     deptId: undefined,
@@ -125,27 +104,24 @@
     children: 'children'
   }
 
-  const searchItems = computed(() => [
-    {
-      label: '部门名称',
-      key: 'deptName',
-      type: 'input',
-      props: { clearable: true, placeholder: '请输入部门名称' }
-    },
-    {
-      label: '状态',
-      key: 'status',
-      type: 'dict-select',
-      props: { dictType: DICT_TYPE.NORMAL_DISABLE, clearable: true, placeholder: '请选择状态' }
-    }
-  ])
+  const tableProps = computed(() => ({
+    stripe: false,
+    defaultExpandAll: isExpanded.value,
+    treeProps: { children: 'children', hasChildren: 'hasChildren' }
+  }))
 
   const rules: FormRules<Api.SystemManage.DeptPayload> = {
     parentId: [{ required: true, message: '上级部门不能为空', trigger: 'change' }],
     deptName: [{ required: true, message: '部门名称不能为空', trigger: 'blur' }],
     orderNum: [{ required: true, message: '显示排序不能为空', trigger: 'blur' }],
     email: [{ type: 'email', message: '请输入正确的邮箱地址', trigger: ['blur', 'change'] }],
-    phone: [{ pattern: /^1[3|4|5|6|7|8|9][0-9]\d{8}$/, message: '请输入正确的手机号码', trigger: 'blur' }]
+    phone: [
+      {
+        pattern: /^1[3|4|5|6|7|8|9][0-9]\d{8}$/,
+        message: '请输入正确的手机号码',
+        trigger: 'blur'
+      }
+    ]
   }
 
   const formItems = computed<FormItem[]>(() => [
@@ -219,34 +195,55 @@
     }
   ])
 
-  const { columnChecks, columns } = useTableColumns<DeptListItem>(() => [
+  const columns: ProTableColumn<DeptListItem, Api.SystemManage.DeptQueryParams>[] = [
     {
       prop: 'deptName',
       label: '部门名称',
       minWidth: 240,
-      formatter: (row) => row.deptName as string
+      search: {
+        props: {
+          placeholder: '请输入部门名称'
+        }
+      },
+      formatter: (row) => row.deptName || '-'
     },
     {
       prop: 'orderNum',
       label: '排序',
       width: 120,
-      formatter: (row) => (row.orderNum !== undefined ? String(row.orderNum) : '-')
+      cellRender: (row) => {
+        if (!hasAuth('system:dept:edit')) {
+          return h('span', row.orderNum != null ? String(row.orderNum) : '-')
+        }
+
+        return h(ElInputNumber, {
+          modelValue: Number(row.orderNum ?? 0),
+          min: 0,
+          controlsPosition: 'right',
+          style: { width: '96px' },
+          'onUpdate:modelValue': (value: number | undefined) => {
+            row.orderNum = value ?? 0
+          }
+        })
+      }
     },
     {
       prop: 'status',
       label: '状态',
       width: 120,
-      cellRender: (row) =>
-        h(ArtDictTag, {
-          dictType: DICT_TYPE.NORMAL_DISABLE,
-          value: row.status
-        })
+      dictType: DICT_TYPE.NORMAL_DISABLE,
+      valueType: 'dict-tag',
+      search: {
+        props: {
+          placeholder: '请选择状态'
+        }
+      }
     },
     {
       prop: 'createTime',
       label: '创建时间',
       minWidth: 170,
-      formatter: (row) => row.createTime as string
+      formatter: (row) => row.createTime || '-'
     },
     {
       prop: 'operation',
@@ -258,19 +255,36 @@
         const actions = []
 
         if (hasAuth('system:dept:edit')) {
-          actions.push(h(ArtButtonTable, { type: 'edit', onClick: () => openEditDialog(row) }))
+          actions.push(
+            h(ArtButtonTable, {
+              type: 'edit',
+              onClick: () => openEditDialog(row)
+            })
+          )
         }
+
         if (hasAuth('system:dept:add')) {
-          actions.push(h(ArtButtonTable, { type: 'add', onClick: () => openAddDialog(row) }))
+          actions.push(
+            h(ArtButtonTable, {
+              type: 'add',
+              onClick: () => openAddDialog(row)
+            })
+          )
         }
+
         if (hasAuth('system:dept:remove') && row.parentId !== 0) {
-          actions.push(h(ArtButtonTable, { type: 'delete', onClick: () => deleteDept(row) }))
+          actions.push(
+            h(ArtButtonTable, {
+              type: 'delete',
+              onClick: () => deleteDept(row)
+            })
+          )
         }
 
         return actions.length ? h('div', { style: 'text-align: right' }, actions) : '-'
       }
     }
-  ])
+  ]
 
   const assertDeptList = (list: DeptListItem[]): DeptListItem[] => {
     if (!Array.isArray(list)) {
@@ -303,14 +317,47 @@
     return roots
   }
 
-  const loadDeptList = async () => {
-    loading.value = true
-    try {
-      const list = assertDeptList(await fetchGetDeptList({ ...searchForm }))
-      deptList.value = buildDeptTree(list)
-    } finally {
-      loading.value = false
+  const recordOriginalOrders = (list: DeptListItem[]) => {
+    const nextOrders: Record<number, number | string | undefined> = {}
+
+    const collect = (nodes: DeptListItem[]) => {
+      nodes.forEach((item) => {
+        if (typeof item.deptId === 'number') {
+          nextOrders[item.deptId] = item.orderNum
+        }
+        if (Array.isArray(item.children) && item.children.length > 0) {
+          collect(item.children)
+        }
+      })
     }
+
+    collect(list)
+    originalOrders.value = nextOrders
+  }
+
+  const deptResponseAdapter = (response: DeptListItem[]) => {
+    const tree = buildDeptTree(assertDeptList(response))
+    return {
+      records: tree,
+      total: 0,
+      current: 1,
+      size: tree.length || 10
+    }
+  }
+
+  const handleTableSuccess = (data: DeptListItem[]) => {
+    recordOriginalOrders(data)
+  }
+
+  const requestDeptList = async (params: Record<string, any>) => {
+    const nextParams: Api.SystemManage.DeptQueryParams = {}
+    if (params.deptName) {
+      nextParams.deptName = params.deptName
+    }
+    if (params.status) {
+      nextParams.status = params.status
+    }
+    return fetchGetDeptList(nextParams)
   }
 
   const loadDeptOptions = async (excludeDeptId?: number) => {
@@ -352,8 +399,7 @@
   }
 
   const submitForm = async () => {
-    if (!formRef.value) return
-    await formRef.value.validate()
+    await formRef.value?.validate()
 
     submitLoading.value = true
     try {
@@ -367,10 +413,52 @@
       }
       ElMessage.success(dialogMode.value === 'edit' ? '修改成功' : '新增成功')
       dialogVisible.value = false
-      await loadDeptList()
+      await proTableRef.value?.refreshData()
     } finally {
       submitLoading.value = false
     }
+  }
+
+  const getCurrentDeptRows = () => {
+    const exposedData = proTableRef.value?.data as
+      | DeptListItem[]
+      | { value?: DeptListItem[] }
+      | undefined
+    return Array.isArray(exposedData) ? exposedData : exposedData?.value || []
+  }
+
+  const saveSort = async () => {
+    const changedDeptIds: number[] = []
+    const changedOrderNums: Array<number | string> = []
+
+    const collectChanged = (list: DeptListItem[]) => {
+      list.forEach((item) => {
+        if (typeof item.deptId === 'number') {
+          if (String(originalOrders.value[item.deptId]) !== String(item.orderNum)) {
+            changedDeptIds.push(item.deptId)
+            changedOrderNums.push(item.orderNum ?? 0)
+          }
+        }
+
+        if (Array.isArray(item.children) && item.children.length > 0) {
+          collectChanged(item.children)
+        }
+      })
+    }
+
+    collectChanged(getCurrentDeptRows())
+
+    if (changedDeptIds.length === 0) {
+      ElMessage.warning('未检测到排序修改')
+      return
+    }
+
+    await fetchUpdateDeptSort({
+      deptIds: changedDeptIds.join(','),
+      orderNums: changedOrderNums.join(',')
+    })
+    ElMessage.success('排序保存成功')
+    recordOriginalOrders(getCurrentDeptRows())
   }
 
   const deleteDept = async (row: DeptListItem) => {
@@ -386,27 +474,15 @@
       })
       await fetchDeleteDept(row.deptId)
       ElMessage.success('删除成功')
-      await loadDeptList()
+      await proTableRef.value?.refreshData()
     } catch (error) {
       if (error === 'cancel' || error === 'close') return
       throw error
     }
   }
 
-  const handleReset = async () => {
-    Object.assign(searchForm, {
-      deptName: undefined,
-      status: undefined
-    })
-    await loadDeptList()
-  }
-
   const toggleExpand = () => {
     isExpanded.value = !isExpanded.value
     tableKey.value += 1
   }
-
-  onMounted(() => {
-    loadDeptList()
-  })
 </script>
