@@ -7,14 +7,6 @@
             新增参数
           </ElButton>
           <ElButton
-            v-auth="'system:config:edit'"
-            :disabled="selectedRows.length !== 1"
-            @click="openDialog('edit', selectedRows[0])"
-            v-ripple
-          >
-            修改
-          </ElButton>
-          <ElButton
             v-auth="'system:config:remove'"
             :disabled="selectedRows.length === 0"
             @click="deleteConfig()"
@@ -22,6 +14,7 @@
           >
             删除
           </ElButton>
+          <ElButton v-auth="'system:config:export'" @click="exportConfig" v-ripple> 导出 </ElButton>
           <ElButton v-auth="'system:config:remove'" @click="refreshCache" v-ripple>
             刷新缓存
           </ElButton>
@@ -67,11 +60,12 @@
   import {
     fetchAddConfig,
     fetchDeleteConfig,
+    fetchExportConfig,
     fetchGetConfigDetail,
     fetchGetConfigList,
     fetchRefreshConfigCache,
     fetchUpdateConfig
-  } from '@/api/system-manage'
+  } from '@/api/system/config'
   import { useAuth } from '@/hooks/core/useAuth'
 
   defineOptions({ name: 'Config' })
@@ -159,7 +153,11 @@
       prop: 'configName',
       label: '参数名称',
       minWidth: 150,
-      search: true,
+      search: {
+        props: {
+          placeholder: '请输入参数名称'
+        }
+      },
       showOverflowTooltip: true,
       formatter: (row) => row.configName as string
     },
@@ -167,7 +165,11 @@
       prop: 'configKey',
       label: '参数键名',
       minWidth: 180,
-      search: true,
+      search: {
+        props: {
+          placeholder: '请输入参数键名'
+        }
+      },
       showOverflowTooltip: true,
       formatter: (row) => row.configKey as string
     },
@@ -184,7 +186,11 @@
       width: 120,
       dictType: DICT_TYPE.YES_NO,
       valueType: 'dict-tag',
-      search: true
+      search: {
+        props: {
+          placeholder: '请选择系统内置'
+        }
+      }
     },
     {
       prop: 'createTimeRange',
@@ -265,7 +271,6 @@
   }
 
   const submitForm = async () => {
-    if (!formRef.value) return
     await formRef.value.validate()
     submitLoading.value = true
     try {
@@ -285,12 +290,23 @@
     }
   }
 
+  const getSelectedConfigIds = (row?: ConfigListItem) => {
+    if (typeof row?.configId === 'number') {
+      return [row.configId]
+    }
+
+    const selectedRows = proTableRef.value?.selectedRows as
+      | ConfigListItem[]
+      | { value: ConfigListItem[] }
+      | undefined
+    const rows = Array.isArray(selectedRows) ? selectedRows : selectedRows?.value || []
+    return rows
+      .map((item) => item.configId)
+      .filter((configId): configId is number => typeof configId === 'number')
+  }
+
   const deleteConfig = async (row?: ConfigListItem) => {
-    const ids = row?.configId
-      ? [row.configId]
-      : (proTableRef.value?.selectedRows ?? [])
-          .map((item: ConfigListItem) => item.configId)
-          .filter((configId): configId is number => typeof configId === 'number')
+    const ids = getSelectedConfigIds(row)
 
     if (ids.length === 0) {
       ElMessage.warning('请先选择需要删除的参数')
@@ -310,6 +326,43 @@
       if (error === 'cancel' || error === 'close') return
       throw error
     }
+  }
+
+  const getCurrentExportParams = (): Api.SystemManage.ConfigSearchParams => {
+    const exposedModel = proTableRef.value?.searchModel as
+      | Record<string, any>
+      | { value: Record<string, any> }
+      | undefined
+    const model = exposedModel && 'value' in exposedModel ? exposedModel.value : exposedModel || {}
+    const params: Api.SystemManage.ConfigSearchParams = {}
+
+    if (model.configName) params.configName = model.configName
+    if (model.configKey) params.configKey = model.configKey
+    if (model.configType) params.configType = model.configType
+
+    const range = Array.isArray(model.createTimeRange) ? model.createTimeRange : []
+    if (range.length === 2) {
+      params.params = {
+        beginTime: range[0],
+        endTime: range[1]
+      }
+    }
+
+    return params
+  }
+
+  const saveBlob = (blob: Blob, fileName: string) => {
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = fileName
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const exportConfig = async () => {
+    const blob = await fetchExportConfig(getCurrentExportParams())
+    saveBlob(blob, `config_${Date.now()}.xlsx`)
   }
 
   const refreshCache = async () => {
