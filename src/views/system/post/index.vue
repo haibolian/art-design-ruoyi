@@ -7,14 +7,6 @@
             新增岗位
           </ElButton>
           <ElButton
-            v-auth="'system:post:edit'"
-            :disabled="selectedRows.length !== 1"
-            @click="openDialog('edit', selectedRows[0])"
-            v-ripple
-          >
-            修改
-          </ElButton>
-          <ElButton
             v-auth="'system:post:remove'"
             :disabled="selectedRows.length === 0"
             @click="deletePost()"
@@ -22,6 +14,7 @@
           >
             删除
           </ElButton>
+          <ElButton v-auth="'system:post:export'" @click="exportPost" v-ripple>导出</ElButton>
         </ElSpace>
       </template>
     </ProTable>
@@ -64,10 +57,11 @@
   import {
     fetchAddPost,
     fetchDeletePost,
+    fetchExportPost,
     fetchGetPostDetail,
     fetchGetPostList,
     fetchUpdatePost
-  } from '@/api/system-manage'
+  } from '@/api/system/post'
   import { useAuth } from '@/hooks/core/useAuth'
 
   defineOptions({ name: 'Post' })
@@ -155,14 +149,22 @@
       prop: 'postCode',
       label: '岗位编码',
       minWidth: 140,
-      search: true,
+      search: {
+        props: {
+          placeholder: '请输入岗位编码'
+        }
+      },
       formatter: (row) => row.postCode as string
     },
     {
       prop: 'postName',
       label: '岗位名称',
       minWidth: 140,
-      search: true,
+      search: {
+        props: {
+          placeholder: '请输入岗位名称'
+        }
+      },
       formatter: (row) => row.postName as string
     },
     {
@@ -177,7 +179,11 @@
       width: 110,
       dictType: DICT_TYPE.NORMAL_DISABLE,
       valueType: 'dict-tag',
-      search: true
+      search: {
+        props: {
+          placeholder: '请选择状态'
+        }
+      }
     },
     {
       prop: 'createTime',
@@ -228,7 +234,6 @@
   }
 
   const submitForm = async () => {
-    if (!formRef.value) return
     await formRef.value.validate()
     submitLoading.value = true
     try {
@@ -248,12 +253,23 @@
     }
   }
 
+  const getSelectedPostIds = (row?: PostListItem) => {
+    if (typeof row?.postId === 'number') {
+      return [row.postId]
+    }
+
+    const selectedRows = proTableRef.value?.selectedRows as
+      | PostListItem[]
+      | { value: PostListItem[] }
+      | undefined
+    const rows = Array.isArray(selectedRows) ? selectedRows : selectedRows?.value || []
+    return rows
+      .map((item) => item.postId)
+      .filter((postId): postId is number => typeof postId === 'number')
+  }
+
   const deletePost = async (row?: PostListItem) => {
-    const ids = row?.postId
-      ? [row.postId]
-      : (proTableRef.value?.selectedRows ?? [])
-          .map((item: PostListItem) => item.postId)
-          .filter((postId): postId is number => typeof postId === 'number')
+    const ids = getSelectedPostIds(row)
 
     if (ids.length === 0) {
       ElMessage.warning('请先选择需要删除的岗位')
@@ -266,12 +282,41 @@
         cancelButtonText: '取消',
         type: 'warning'
       })
-      await fetchDeletePost(ids as number[])
+      await fetchDeletePost(ids)
       ElMessage.success('删除成功')
       await proTableRef.value?.refreshRemove()
     } catch (error) {
       if (error === 'cancel' || error === 'close') return
       throw error
     }
+  }
+
+  const getCurrentExportParams = (): Api.SystemManage.PostSearchParams => {
+    const exposedModel = proTableRef.value?.searchModel as
+      | Record<string, any>
+      | { value: Record<string, any> }
+      | undefined
+    const model = exposedModel && 'value' in exposedModel ? exposedModel.value : exposedModel || {}
+    const params: Api.SystemManage.PostSearchParams = {}
+
+    if (model.postCode) params.postCode = model.postCode
+    if (model.postName) params.postName = model.postName
+    if (model.status) params.status = model.status
+
+    return params
+  }
+
+  const saveBlob = (blob: Blob, fileName: string) => {
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = fileName
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const exportPost = async () => {
+    const blob = await fetchExportPost(getCurrentExportParams())
+    saveBlob(blob, `post_${Date.now()}.xlsx`)
   }
 </script>
