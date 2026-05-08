@@ -1,18 +1,15 @@
 <template>
   <div class="art-full-height">
-    <ProTable ref="proTableRef" :request="requestDictDataList" :columns="columns" :immediate="false">
+    <ProTable
+      ref="proTableRef"
+      :request="requestDictDataList"
+      :columns="columns"
+      :immediate="false"
+    >
       <template #toolbar-left="{ selectedRows }">
         <ElSpace wrap>
           <ElButton v-auth="'system:dict:add'" @click="openDialog('add')" v-ripple>
             新增字典数据
-          </ElButton>
-          <ElButton
-            v-auth="'system:dict:edit'"
-            :disabled="selectedRows.length !== 1"
-            @click="openDialog('edit', selectedRows[0])"
-            v-ripple
-          >
-            修改
           </ElButton>
           <ElButton
             v-auth="'system:dict:remove'"
@@ -22,6 +19,7 @@
           >
             删除
           </ElButton>
+          <ElButton v-auth="'system:dict:export'" @click="exportDictData" v-ripple>导出</ElButton>
           <ElButton @click="router.push({ name: 'Dict' })" v-ripple>关闭</ElButton>
         </ElSpace>
       </template>
@@ -65,13 +63,16 @@
   import {
     fetchAddDictData,
     fetchDeleteDictData,
+    fetchExportDictData,
     fetchGetDictDataDetail,
     fetchGetDictDataList,
+    fetchGetDictTypeOptions,
     fetchGetDictTypeDetail,
     fetchUpdateDictData
-  } from '@/api/system-manage'
+  } from '@/api/system/dict'
   import { useAuth } from '@/hooks/core/useAuth'
   import { useDictStore } from '@/store/modules/dict'
+  import { createTimestampedFilename, downloadBlob } from '@/utils/file/download'
 
   defineOptions({ name: 'DictData' })
 
@@ -85,6 +86,7 @@
   const proTableRef = ref<ProTableExpose<DictDataListItem> | null>(null)
   const formRef = ref<InstanceType<typeof ArtForm>>()
   const currentDictType = ref<string>()
+  const typeOptions = ref<Api.SystemManage.DictTypeListItem[]>([])
   const dialogVisible = ref(false)
   const dialogMode = ref<DialogMode>('add')
   const formLoading = ref(false)
@@ -194,12 +196,32 @@
   const columns: ProTableColumn<DictDataListItem, Api.SystemManage.DictDataSearchParams>[] = [
     { type: 'selection' },
     { type: 'index', width: 60, label: '序号' },
+    {
+      prop: 'dictType',
+      label: '字典名称',
+      hideInTable: true,
+      search: {
+        type: 'select',
+        label: '字典名称',
+        props: {
+          placeholder: '请选择字典名称',
+          options: typeOptions.value.map((item) => ({
+            label: item.dictName || item.dictType || '',
+            value: item.dictType || ''
+          }))
+        }
+      }
+    },
     { prop: 'dictCode', label: '字典编码', width: 100 },
     {
       prop: 'dictLabel',
       label: '字典标签',
       minWidth: 140,
-      search: true,
+      search: {
+        props: {
+          placeholder: '请输入字典标签'
+        }
+      },
       cellRender: (row) => {
         if (!row.listClass || row.listClass === 'default') {
           return h('span', row.dictLabel as any)
@@ -225,7 +247,11 @@
       width: 110,
       dictType: DICT_TYPE.NORMAL_DISABLE,
       valueType: 'dict-tag',
-      search: true
+      search: {
+        props: {
+          placeholder: '请选择状态'
+        }
+      }
     },
     {
       prop: 'remark',
@@ -260,12 +286,14 @@
   ]
 
   const requestDictDataList = (params: Api.SystemManage.DictDataSearchParams) => {
-    if (!currentDictType.value) {
+    const dictType = params.dictType || currentDictType.value
+    if (!dictType) {
       throw new Error('字典类型缺失，无法查询字典数据')
     }
+    currentDictType.value = dictType
     return fetchGetDictDataList({
       ...params,
-      dictType: currentDictType.value
+      dictType
     })
   }
 
@@ -274,17 +302,23 @@
     formRef.value?.ref?.resetFields()
   }
 
-  const invalidateCurrentDict = () => {
-    if (!currentDictType.value) {
+  const invalidateCurrentDict = (dictType?: string) => {
+    const targetDictType = dictType || currentDictType.value
+    if (!targetDictType) {
       throw new Error('字典类型缺失，无法刷新字典缓存')
     }
-    dictStore.invalidate(currentDictType.value)
+    dictStore.invalidate(targetDictType)
   }
 
   const openDialog = async (mode: DialogMode, row?: DictDataListItem) => {
     resetForm()
     dialogMode.value = mode
     dialogVisible.value = true
+
+    if (mode === 'add') {
+      form.dictType = currentDictType.value
+      return
+    }
 
     if (mode === 'edit') {
       if (typeof row?.dictCode !== 'number') {
@@ -312,7 +346,7 @@
       } else {
         await fetchAddDictData({ ...form })
       }
-      invalidateCurrentDict()
+      invalidateCurrentDict(form.dictType)
       ElMessage.success(dialogMode.value === 'edit' ? '修改成功' : '新增成功')
       dialogVisible.value = false
       await proTableRef.value?.refreshData()
@@ -340,7 +374,7 @@
         type: 'warning'
       })
       await fetchDeleteDictData(ids as number[])
-      invalidateCurrentDict()
+      invalidateCurrentDict(row?.dictType)
       ElMessage.success('删除成功')
       await proTableRef.value?.refreshRemove()
     } catch (error) {
@@ -354,12 +388,26 @@
     if (!Number.isFinite(dictId)) {
       throw new Error('路由参数 dictId 不符合约定')
     }
-    const detail = await fetchGetDictTypeDetail(dictId)
+    const [detail, options] = await Promise.all([
+      fetchGetDictTypeDetail(dictId),
+      fetchGetDictTypeOptions()
+    ])
     currentDictType.value = detail.dictType
+    typeOptions.value = options
+    if (proTableRef.value) {
+      proTableRef.value.searchModel.dictType = detail.dictType
+    }
     await proTableRef.value?.getData()
   }
 
-  onMounted(() => {
-    initPage()
-  })
+  const exportDictData = async () => {
+    const blob = await fetchExportDictData({
+      ...(proTableRef.value?.searchParameters || {}),
+      dictType: (proTableRef.value?.searchParameters?.dictType as string) || currentDictType.value
+    })
+    downloadBlob(blob, createTimestampedFilename('dict_data', 'xlsx'))
+  }
+
+  onMounted(initPage)
+  onActivated(initPage)
 </script>

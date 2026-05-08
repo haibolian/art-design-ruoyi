@@ -7,14 +7,6 @@
             新增字典
           </ElButton>
           <ElButton
-            v-auth="'system:dict:edit'"
-            :disabled="selectedRows.length !== 1"
-            @click="openDialog('edit', selectedRows[0])"
-            v-ripple
-          >
-            修改
-          </ElButton>
-          <ElButton
             v-auth="'system:dict:remove'"
             :disabled="selectedRows.length === 0"
             @click="deleteDictType()"
@@ -22,6 +14,7 @@
           >
             删除
           </ElButton>
+          <ElButton v-auth="'system:dict:export'" @click="exportDictType" v-ripple>导出</ElButton>
           <ElButton v-auth="'system:dict:remove'" @click="refreshCache" v-ripple>
             刷新缓存
           </ElButton>
@@ -67,13 +60,15 @@
   import {
     fetchAddDictType,
     fetchDeleteDictType,
+    fetchExportDictType,
     fetchGetDictTypeDetail,
     fetchGetDictTypeList,
     fetchRefreshDictCache,
     fetchUpdateDictType
-  } from '@/api/system-manage'
+  } from '@/api/system/dict'
   import { useAuth } from '@/hooks/core/useAuth'
   import { useDictStore } from '@/store/modules/dict'
+  import { createTimestampedFilename, downloadBlob } from '@/utils/file/download'
 
   defineOptions({ name: 'Dict' })
 
@@ -145,7 +140,6 @@
 
   const columns: ProTableColumn<DictTypeListItem, Api.SystemManage.DictTypeSearchParams>[] = [
     { type: 'selection' },
-    { type: 'index', width: 60, label: '序号' },
     { prop: 'dictId', label: '字典编号', width: 100 },
     {
       prop: 'dictName',
@@ -158,14 +152,18 @@
       prop: 'dictType',
       label: '字典类型',
       minWidth: 180,
-      search: true,
+      search: {
+        props: {
+          placeholder: '请输入字典类型'
+        }
+      },
       cellRender: (row) =>
         h(
           ElButton,
           {
             link: true,
             type: 'primary',
-            onClick: () => openDictData(row)
+            onClick: () => openDictDataPage(row)
           },
           () => row.dictType
         )
@@ -176,7 +174,11 @@
       width: 110,
       dictType: DICT_TYPE.NORMAL_DISABLE,
       valueType: 'dict-tag',
-      search: true
+      search: {
+        props: {
+          placeholder: '请选择状态'
+        }
+      }
     },
     {
       prop: 'createTimeRange',
@@ -217,7 +219,7 @@
     {
       prop: 'operation',
       label: '操作',
-      width: 120,
+      width: 180,
       fixed: 'right',
       align: 'right',
       cellRender: (row) => {
@@ -261,7 +263,7 @@
     })
   }
 
-  const openDictData = (row: DictTypeListItem) => {
+  const openDictDataPage = (row: DictTypeListItem) => {
     if (typeof row.dictId !== 'number') {
       throw new Error('字典ID缺失，无法打开字典数据')
     }
@@ -341,5 +343,10 @@
     await fetchRefreshDictCache()
     dictStore.clearLocalCache()
     ElMessage.success('刷新成功')
+  }
+
+  const exportDictType = async () => {
+    const blob = await fetchExportDictType(proTableRef.value?.searchParameters || {})
+    downloadBlob(blob, createTimestampedFilename('dict_type', 'xlsx'))
   }
 </script>
