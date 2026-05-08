@@ -1,27 +1,9 @@
 import request from '@/utils/http'
+import { toFormUrlEncoded } from '@/utils/http/form'
 
 const normalizeId = (id: number | string | undefined | null) =>
   id === undefined || id === null ? '' : id
 const joinIds = (ids: number | number[]) => (Array.isArray(ids) ? ids.join(',') : ids)
-const toFormUrlEncoded = (params: Record<string, any>) => {
-  const data = new URLSearchParams()
-
-  Object.entries(params).forEach(([key, value]) => {
-    if (value === undefined || value === null || value === '') return
-
-    if (key === 'params' && typeof value === 'object' && !Array.isArray(value)) {
-      Object.entries(value).forEach(([paramKey, paramValue]) => {
-        if (paramValue === undefined || paramValue === null || paramValue === '') return
-        data.append(`params[${paramKey}]`, String(paramValue))
-      })
-      return
-    }
-
-    data.append(key, String(value))
-  })
-
-  return data
-}
 
 // 查询角色列表
 export function fetchGetRoleList(params: Api.SystemManage.RoleSearchParams) {

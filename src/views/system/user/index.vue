@@ -122,6 +122,7 @@
   import ArtDictTag from '@/components/core/display/art-dict-tag/index.vue'
   import UserDialog from './modules/user-dialog.vue'
   import { useAuth } from '@/hooks/core/useAuth'
+  import { createTimestampedFilename, downloadBlob } from '@/utils/file/download'
   import { DICT_TYPE } from '@/types'
   import type { ProTableColumn, ProTableExpose } from '@/types/component'
   import {
@@ -496,23 +497,14 @@
     return params
   }
 
-  const saveBlob = (blob: Blob, fileName: string) => {
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = fileName
-    link.click()
-    URL.revokeObjectURL(url)
-  }
-
   const exportUser = async () => {
     const blob = await fetchExportUser(getCurrentExportParams())
-    saveBlob(blob, `user_${Date.now()}.xlsx`)
+    downloadBlob(blob, createTimestampedFilename('user', 'xlsx'))
   }
 
   const downloadTemplate = async () => {
     const blob = await fetchDownloadUserImportTemplate()
-    saveBlob(blob, 'user_template.xlsx')
+    downloadBlob(blob, 'user_template.xlsx')
   }
 
   const isExcelFile = (file: { name?: string }) => {

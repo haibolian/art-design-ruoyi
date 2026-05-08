@@ -67,6 +67,7 @@
     fetchUpdateConfig
   } from '@/api/system/config'
   import { useAuth } from '@/hooks/core/useAuth'
+  import { createTimestampedFilename, downloadBlob } from '@/utils/file/download'
 
   defineOptions({ name: 'Config' })
 
@@ -351,18 +352,9 @@
     return params
   }
 
-  const saveBlob = (blob: Blob, fileName: string) => {
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = fileName
-    link.click()
-    URL.revokeObjectURL(url)
-  }
-
   const exportConfig = async () => {
     const blob = await fetchExportConfig(getCurrentExportParams())
-    saveBlob(blob, `config_${Date.now()}.xlsx`)
+    downloadBlob(blob, createTimestampedFilename('config', 'xlsx'))
   }
 
   const refreshCache = async () => {

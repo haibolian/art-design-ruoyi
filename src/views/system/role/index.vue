@@ -46,6 +46,7 @@
     fetchGetRoleList
   } from '@/api/system/role'
   import { useAuth } from '@/hooks/core/useAuth'
+  import { createTimestampedFilename, downloadBlob } from '@/utils/file/download'
   import RoleDataScopeDialog from './modules/role-data-scope-dialog.vue'
   import RoleEditDialog from './modules/role-edit-dialog.vue'
 
@@ -332,18 +333,9 @@
     return params
   }
 
-  const saveBlob = (blob: Blob, fileName: string) => {
-    const url = URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = fileName
-    link.click()
-    URL.revokeObjectURL(url)
-  }
-
   const exportRole = async () => {
     const blob = await fetchExportRole(getCurrentExportParams())
-    saveBlob(blob, `role_${Date.now()}.xlsx`)
+    downloadBlob(blob, createTimestampedFilename('role', 'xlsx'))
   }
 
   const handleDialogSuccess = async () => {
