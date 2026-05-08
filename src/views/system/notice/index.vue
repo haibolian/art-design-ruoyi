@@ -56,6 +56,9 @@
         <ElButton type="primary" :loading="submitLoading" @click="submitForm">确定</ElButton>
       </template>
     </ElDialog>
+
+    <NoticeDetailDrawer ref="noticeDetailDrawerRef" />
+    <ReadUsersDialog ref="readUsersDialogRef" />
   </div>
 </template>
 
@@ -63,16 +66,18 @@
   import ArtButtonTable from '@/components/core/forms/art-button-table/index.vue'
   import ArtForm, { type FormItem } from '@/components/core/forms/art-form/index.vue'
   import ArtWangEditor from '@/components/core/forms/art-wang-editor/index.vue'
+  import NoticeDetailDrawer from './modules/notice-detail-drawer.vue'
+  import ReadUsersDialog from './modules/read-users-dialog.vue'
   import { DICT_TYPE } from '@/types'
   import type { ProTableColumn, ProTableExpose } from '@/types/component'
-  import { ElMessageBox, type FormRules } from 'element-plus'
+  import { ElButton, ElMessageBox, type FormRules } from 'element-plus'
   import {
     fetchAddNotice,
     fetchDeleteNotice,
     fetchGetNoticeDetail,
     fetchGetNoticeList,
     fetchUpdateNotice
-  } from '@/api/system-manage'
+  } from '@/api/system/notice'
   import { useAuth } from '@/hooks/core/useAuth'
 
   defineOptions({ name: 'Notice' })
@@ -87,6 +92,8 @@
   const dialogMode = ref<DialogMode>('add')
   const formLoading = ref(false)
   const submitLoading = ref(false)
+  const noticeDetailDrawerRef = ref<InstanceType<typeof NoticeDetailDrawer> | null>(null)
+  const readUsersDialogRef = ref<InstanceType<typeof ReadUsersDialog> | null>(null)
 
   const createDefaultForm = (): Api.SystemManage.NoticePayload => ({
     noticeId: undefined,
@@ -152,9 +159,22 @@
       prop: 'noticeTitle',
       label: '公告标题',
       minWidth: 180,
-      search: true,
+      search: {
+        props: {
+          placeholder: '请输入公告标题'
+        }
+      },
       showOverflowTooltip: true,
-      formatter: (row) => row.noticeTitle as string
+      cellRender: (row) =>
+        h(
+          ElButton,
+          {
+            type: 'primary',
+            link: true,
+            onClick: () => openNoticeDetail(row)
+          },
+          () => row.noticeTitle || '-'
+        )
     },
     {
       prop: 'noticeType',
@@ -162,7 +182,11 @@
       width: 120,
       dictType: DICT_TYPE.NOTICE_TYPE,
       valueType: 'dict-tag',
-      search: true
+      search: {
+        props: {
+          placeholder: '请选择公告类型'
+        }
+      }
     },
     {
       prop: 'status',
@@ -175,7 +199,11 @@
       prop: 'createBy',
       label: '创建者',
       width: 120,
-      search: true,
+      search: {
+        props: {
+          placeholder: '请输入操作人员'
+        }
+      },
       formatter: (row) => row.createBy as string
     },
     {
@@ -187,11 +215,24 @@
     {
       prop: 'operation',
       label: '操作',
-      width: 120,
+      width: 200,
       fixed: 'right',
       align: 'right',
       cellRender: (row) => {
         const actions = []
+        // if (hasAuth('system:notice:list')) {
+        //   actions.push(
+        //     h(
+        //       ElButton,
+        //       {
+        //         link: true,
+        //         type: 'primary',
+        //         onClick: () => openReadUsersDialog(row)
+        //       },
+        //       () => '阅读用户'
+        //     )
+        //   )
+        // }
         if (hasAuth('system:notice:edit')) {
           actions.push(h(ArtButtonTable, { type: 'edit', onClick: () => openDialog('edit', row) }))
         }
@@ -206,6 +247,14 @@
   const resetForm = () => {
     Object.assign(form, createDefaultForm())
     formRef.value?.ref?.resetFields()
+  }
+
+  const openNoticeDetail = (row: NoticeListItem) => {
+    noticeDetailDrawerRef.value?.open(row)
+  }
+
+  const openReadUsersDialog = (row: NoticeListItem) => {
+    readUsersDialogRef.value?.open(row)
   }
 
   const openDialog = async (mode: DialogMode, row?: NoticeListItem) => {
@@ -227,7 +276,6 @@
   }
 
   const submitForm = async () => {
-    if (!formRef.value) return
     await formRef.value.validate()
     submitLoading.value = true
     try {
@@ -247,12 +295,23 @@
     }
   }
 
+  const getSelectedNoticeIds = (row?: NoticeListItem) => {
+    if (typeof row?.noticeId === 'number') {
+      return [row.noticeId]
+    }
+
+    const selectedRows = proTableRef.value?.selectedRows as
+      | NoticeListItem[]
+      | { value: NoticeListItem[] }
+      | undefined
+    const rows = Array.isArray(selectedRows) ? selectedRows : selectedRows?.value || []
+    return rows
+      .map((item) => item.noticeId)
+      .filter((noticeId): noticeId is number => typeof noticeId === 'number')
+  }
+
   const deleteNotice = async (row?: NoticeListItem) => {
-    const ids = row?.noticeId
-      ? [row.noticeId]
-      : (proTableRef.value?.selectedRows ?? [])
-          .map((item: NoticeListItem) => item.noticeId)
-          .filter((noticeId): noticeId is number => typeof noticeId === 'number')
+    const ids = getSelectedNoticeIds(row)
 
     if (ids.length === 0) {
       ElMessage.warning('请先选择需要删除的公告')

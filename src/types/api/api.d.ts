@@ -520,6 +520,28 @@ declare namespace Api {
     }
 
     type NoticePayload = Partial<NoticeListItem>
+
+    interface NoticeReadUserSearchParams extends Partial<Api.Common.CommonSearchParams> {
+      noticeId?: number
+      searchValue?: string
+    }
+
+    type NoticeReadUserList = Api.Common.PaginatedResponse<NoticeReadUserItem> & {
+      rows?: NoticeReadUserItem[]
+      total: number
+      pageNum?: number
+      pageSize?: number
+    }
+
+    interface NoticeReadUserItem {
+      userId?: number
+      userName?: string
+      nickName?: string
+      deptName?: string
+      phonenumber?: string
+      readTime?: string
+      [key: string]: any
+    }
   }
 
   /** 系统监控类型 */
