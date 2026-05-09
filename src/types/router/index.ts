@@ -81,6 +81,7 @@ export interface AppRouteRecord extends Omit<RouteRecordRaw, 'meta' | 'children'
   hidden?: boolean
   alwaysShow?: boolean
   query?: string
+  permissions?: string[]
   meta: RouteMeta
   children?: AppRouteRecord[]
   component?: string | (() => Promise<any>)

@@ -11,7 +11,7 @@ import type { AppRouteRecord } from '@/types/router'
 import { useUserStore } from '@/store/modules/user'
 import { useAppMode } from '@/hooks/core/useAppMode'
 import { fetchGetRouters } from '@/api/system-manage'
-import { asyncRoutes } from '../routes/asyncRoutes'
+import { frontendRoutes } from '../routes/frontendRoutes'
 import { RoutesAlias } from '../routesAlias'
 import { formatMenuTitle } from '@/utils'
 
@@ -43,7 +43,7 @@ export class MenuProcessor {
     const userStore = useUserStore()
     const roles = userStore.info?.roles
 
-    let menuList = [...asyncRoutes]
+    let menuList = [...frontendRoutes]
 
     // 根据角色过滤菜单
     if (roles && roles.length > 0) {
@@ -104,7 +104,7 @@ export class MenuProcessor {
         }
 
         // 如果有外链或 iframe，保留
-        if (item.meta?.isIframe === true || item.meta?.link) {
+        if (this.isIframeRoute(item) || item.meta?.link) {
           return true
         }
 
@@ -244,6 +244,10 @@ export class MenuProcessor {
       // 递归检查更深层级的子路由
       this.validateMenuPaths(route.children, level + 1)
     })
+  }
+
+  private isIframeRoute(route: AppRouteRecord): boolean {
+    return route.meta?.isIframe === true || route.component === 'InnerLink'
   }
 
   /**

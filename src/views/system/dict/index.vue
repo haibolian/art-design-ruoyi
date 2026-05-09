@@ -76,7 +76,6 @@
   type DialogMode = 'add' | 'edit'
 
   const router = useRouter()
-  const route = useRoute()
   const dictStore = useDictStore()
   const { hasAuth } = useAuth()
   const proTableRef = ref<ProTableExpose<DictTypeListItem> | null>(null)
@@ -240,34 +239,10 @@
     formRef.value?.ref?.resetFields()
   }
 
-  const ensureDictDataRoute = () => {
-    if (router.hasRoute('DictData')) {
-      return
-    }
-
-    const parentRouteName = route.matched[0]?.name
-    if (!parentRouteName) {
-      throw new Error('未找到字典管理父级路由，无法注册字典数据路由')
-    }
-
-    router.addRoute(parentRouteName, {
-      path: 'dict-data/:dictId',
-      name: 'DictData',
-      component: () => import('./data/index.vue'),
-      meta: {
-        title: 'menus.system.dictData',
-        isHide: true,
-        keepAlive: true,
-        roles: ['R_SUPER']
-      }
-    })
-  }
-
   const openDictDataPage = (row: DictTypeListItem) => {
     if (typeof row.dictId !== 'number') {
       throw new Error('字典ID缺失，无法打开字典数据')
     }
-    ensureDictDataRoute()
     router.push({ name: 'DictData', params: { dictId: row.dictId } })
   }
 

@@ -56,7 +56,6 @@
   type DialogType = 'add' | 'edit'
 
   const { hasAuth } = useAuth()
-  const route = useRoute()
   const router = useRouter()
 
   const proTableRef = ref<ProTableExpose<RoleListItem> | null>(null)
@@ -217,33 +216,8 @@
     dataScopeVisible.value = true
   }
 
-  const ensureRoleAuthUserRoute = () => {
-    if (router.hasRoute('RoleAuthUser')) {
-      return
-    }
-
-    const parentRouteName = route.matched[0]?.name
-    if (!parentRouteName) {
-      throw new Error('未找到角色管理父级路由，无法注册分配用户路由')
-    }
-
-    router.addRoute(parentRouteName, {
-      path: 'role-auth/user/:roleId',
-      name: 'RoleAuthUser',
-      component: () => import('./auth-user.vue'),
-      meta: {
-        title: '角色分配用户',
-        isHide: true,
-        isHideTab: true,
-        keepAlive: true,
-        roles: ['R_SUPER']
-      }
-    })
-  }
-
   const openRoleAuthUser = async (row: RoleListItem) => {
     if (typeof row.roleId !== 'number') return
-    ensureRoleAuthUserRoute()
     await router.push({ name: 'RoleAuthUser', params: { roleId: row.roleId } })
   }
 

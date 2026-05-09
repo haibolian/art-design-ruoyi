@@ -7,7 +7,7 @@
  * @author Art Design Pro Team
  */
 
-import type { Router, RouteRecordRaw } from 'vue-router'
+import type { RouteLocationRaw, Router, RouteRecordRaw } from 'vue-router'
 import type { AppRouteRecord } from '@/types/router'
 import { ComponentLoader } from './ComponentLoader'
 import { RouteValidator } from './RouteValidator'
@@ -86,6 +86,17 @@ export class RouteRegistry {
    */
   getRemoveRouteFns(): (() => void)[] {
     return this.removeRouteFns
+  }
+
+  /**
+   * 判断目标路由是否已注册且可匹配
+   */
+  hasRegisteredRoute(to: RouteLocationRaw): boolean {
+    const resolvedRoute = this.router.resolve(to)
+    return (
+      resolvedRoute.matched.length > 0 &&
+      !resolvedRoute.matched.every((matchedRoute) => matchedRoute.name === 'Exception404')
+    )
   }
 
   /**

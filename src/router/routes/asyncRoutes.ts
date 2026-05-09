@@ -1,9 +1,81 @@
-// 权限文档：https://www.artd.pro/docs/zh/guide/in-depth/permission.html
-import { AppRouteRecord } from '@/types/router'
-import { routeModules } from '../modules'
+import type { AppRouteRecord } from '@/types/router'
 
 /**
- * 动态路由（需要权限才能访问的路由）
- * 用于渲染菜单以及根据菜单权限动态加载路由，如果没有权限无法访问
+ * 后端路由模式下的本地隐藏业务路由
+ * 参考若依 dynamicRoutes：不依赖 getRouters 返回，由前端按 permissions 补充注册
  */
-export const asyncRoutes: AppRouteRecord[] = routeModules
+export const asyncRoutes: AppRouteRecord[] = [
+  {
+    path: '/system/role-auth',
+    name: 'SystemRoleAuth',
+    component: '/index/index',
+    hidden: true,
+    permissions: ['system:role:edit'],
+    meta: {
+      title: '角色分配用户',
+      isHide: true
+    },
+    children: [
+      {
+        path: 'user/:roleId',
+        name: 'RoleAuthUser',
+        component: '/system/role/auth-user',
+        meta: {
+          title: '角色分配用户',
+          activePath: '/system/role',
+          isHide: true,
+          isHideTab: true,
+          keepAlive: true
+        }
+      }
+    ]
+  },
+  {
+    path: '/system/dict-data',
+    name: 'SystemDictData',
+    component: '/index/index',
+    hidden: true,
+    permissions: ['system:dict:list'],
+    meta: {
+      title: 'menus.system.dictData',
+      isHide: true
+    },
+    children: [
+      {
+        path: ':dictId',
+        name: 'DictData',
+        component: '/system/dict/data',
+        meta: {
+          title: 'menus.system.dictData',
+          activePath: '/system/dict',
+          isHide: true,
+          keepAlive: true
+        }
+      }
+    ]
+  },
+  {
+    path: '/monitor/job-log',
+    name: 'MonitorJobLog',
+    component: '/index/index',
+    hidden: true,
+    permissions: ['monitor:job:list'],
+    meta: {
+      title: 'menus.monitor.jobLog',
+      isHide: true
+    },
+    children: [
+      {
+        path: ':jobId?',
+        name: 'JobLog',
+        component: '/monitor/job/log',
+        meta: {
+          title: 'menus.monitor.jobLog',
+          activePath: '/monitor/job',
+          isHide: true,
+          keepAlive: true
+        }
+      }
+    ]
+  }
+]

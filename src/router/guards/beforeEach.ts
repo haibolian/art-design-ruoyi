@@ -45,13 +45,15 @@ import { setWorktab } from '@/utils/navigation'
 import { setPageTitle } from '@/utils/router'
 import { RoutesAlias } from '../routesAlias'
 import { staticRoutes } from '../routes/staticRoutes'
+import { asyncRoutes } from '../routes/asyncRoutes'
 import { loadingService } from '@/utils/ui'
 import { useCommon } from '@/hooks/core/useCommon'
+import { useAppMode } from '@/hooks/core/useAppMode'
 import { useWorktabStore } from '@/store/modules/worktab'
 import { fetchGetUserInfo } from '@/api/auth'
 import { ApiStatus } from '@/utils/http/status'
 import { isHttpError } from '@/utils/http/error'
-import { RouteRegistry, MenuProcessor, IframeRouteManager, RoutePermissionValidator } from '../core'
+import { RouteRegistry, MenuProcessor, IframeRouteManager, RouteAccessControl } from '../core'
 
 // 路由注册器实例
 let routeRegistry: RouteRegistry | null = null
@@ -262,6 +264,9 @@ async function handleDynamicRoutes(
   next: NavigationGuardNext,
   router: Router
 ): Promise<void> {
+  const userStore = useUserStore()
+  const { isFrontendMode } = useAppMode()
+
   // 标记初始化进行中
   routeInitInProgress = true
 
@@ -276,26 +281,35 @@ async function handleDynamicRoutes(
     // 2. 获取菜单数据
     const menuList = await menuProcessor.getMenuList()
 
-    // 3. 验证菜单数据
+    // 3. 过滤后端模式下的本地隐藏业务路由
+    const extraRoutes = isFrontendMode.value
+      ? []
+      : RouteAccessControl.filterRoutesByPermission(
+          asyncRoutes,
+          userStore.info?.permissions || [],
+          userStore.info?.roles || []
+        )
+
+    // 4. 验证菜单数据
     if (!menuProcessor.validateMenuList(menuList)) {
       throw new Error('获取菜单列表失败，请重新登录')
     }
 
-    // 4. 注册动态路由
-    routeRegistry?.register(menuList)
+    // 5. 注册动态路由
+    routeRegistry?.register([...menuList, ...extraRoutes])
 
-    // 5. 保存菜单数据到 store
+    // 6. 保存菜单数据到 store
     const menuStore = useMenuStore()
     menuStore.setMenuList(menuList)
     menuStore.addRemoveRouteFns(routeRegistry?.getRemoveRouteFns() || [])
 
-    // 6. 保存 iframe 路由
+    // 7. 保存 iframe 路由
     IframeRouteManager.getInstance().save()
 
-    // 7. 验证工作标签页
+    // 8. 验证工作标签页
     useWorktabStore().validateWorktabs(router)
 
-    // 8. 静态路由不依赖菜单权限，初始化后直接恢复目标地址。
+    // 9. 静态路由不依赖菜单权限，初始化后直接恢复目标地址。
     if (isStaticRoute(to.path)) {
       routeInitInProgress = false
       next({
@@ -307,18 +321,18 @@ async function handleDynamicRoutes(
       return
     }
 
-    // 8. 验证目标路径权限
+    // 10. 验证目标路径是否已注册
+    const hasPermission = routeRegistry?.hasRegisteredRoute({
+      path: to.path,
+      query: to.query,
+      hash: to.hash
+    })
     const { homePath } = useCommon()
-    const { path: validatedPath, hasPermission } = RoutePermissionValidator.validatePath(
-      to.path,
-      menuList,
-      homePath.value || '/'
-    )
 
     // 初始化成功，重置进行中标记
     routeInitInProgress = false
 
-    // 9. 重新导航到目标路由
+    // 11. 重新导航到目标路由
     if (!hasPermission) {
       // 无权限访问，跳转到首页
       closeLoading()
@@ -328,7 +342,7 @@ async function handleDynamicRoutes(
 
       // 直接跳转到首页
       next({
-        path: validatedPath,
+        path: homePath.value || '/',
         replace: true
       })
     } else {

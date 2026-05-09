@@ -109,7 +109,6 @@
   type DialogMode = 'add' | 'edit'
 
   const router = useRouter()
-  const route = useRoute()
   const { hasAuth } = useAuth()
   const proTableRef = ref<ProTableExpose<JobListItem> | null>(null)
   const formRef = ref<InstanceType<typeof ArtForm>>()
@@ -322,29 +321,6 @@
     formRef.value?.ref?.resetFields()
   }
 
-  const ensureJobLogRoute = () => {
-    if (router.hasRoute('JobLog')) {
-      return
-    }
-
-    const parentRouteName = route.matched[0]?.name
-    if (!parentRouteName) {
-      throw new Error('未找到系统监控父级路由，无法注册调度日志路由')
-    }
-
-    router.addRoute(parentRouteName, {
-      path: 'job-log/:jobId?',
-      name: 'JobLog',
-      component: () => import('./log.vue'),
-      meta: {
-        title: 'menus.monitor.jobLog',
-        isHide: true,
-        keepAlive: true,
-        roles: ['R_SUPER', 'R_ADMIN']
-      }
-    })
-  }
-
   const openDialog = async (mode: DialogMode, row?: JobListItem) => {
     resetForm()
     dialogMode.value = mode
@@ -466,7 +442,6 @@
   }
 
   const openJobLog = (row?: JobListItem) => {
-    ensureJobLogRoute()
     const params = typeof row?.jobId === 'number' ? { jobId: row.jobId } : {}
     router.push({ name: 'JobLog', params })
   }

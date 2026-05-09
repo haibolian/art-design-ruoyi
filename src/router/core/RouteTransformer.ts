@@ -31,25 +31,21 @@ export class RouteTransformer {
    * 转换路由配置
    */
   transform(route: AppRouteRecord, depth = 0): ConvertedRoute {
-    const normalizedRoute = this.normalizeRouteMeta(route)
-    const { component, children, ...routeConfig } = normalizedRoute
+    const { component, children, ...routeConfig } = route
 
-    // 基础路由配置
     const converted: ConvertedRoute = {
       ...routeConfig,
       component: undefined
     }
 
-    // 处理不同类型的路由
-    if (normalizedRoute.meta.isIframe) {
-      this.handleIframeRoute(converted, normalizedRoute, depth)
-    } else if (this.isFirstLevelRoute(normalizedRoute, depth)) {
-      this.handleFirstLevelRoute(converted, normalizedRoute, component as string)
+    if (route.meta?.isIframe) {
+      this.handleIframeRoute(converted, route, depth)
+    } else if (this.isFirstLevelRoute(route, depth)) {
+      this.handleFirstLevelRoute(converted, route, component as string)
     } else {
       this.handleNormalRoute(converted, component as string)
     }
 
-    // 递归处理子路由
     if (children?.length) {
       converted.children = children.map((child) => this.transform(child, depth + 1))
     }
@@ -62,32 +58,6 @@ export class RouteTransformer {
    */
   private isFirstLevelRoute(route: AppRouteRecord, depth: number): boolean {
     return depth === 0 && (!route.children || route.children.length === 0)
-  }
-
-  /**
-   * 统一标准化若依和 art 两种字段，避免业务组件分散判断
-   */
-  private normalizeRouteMeta(route: AppRouteRecord): AppRouteRecord {
-    const normalizedMeta = {
-      ...(route.meta || {})
-    }
-
-    if (typeof route.hidden === 'boolean' && normalizedMeta.isHide === undefined) {
-      normalizedMeta.isHide = route.hidden
-    }
-
-    if (typeof normalizedMeta.noCache === 'boolean' && normalizedMeta.keepAlive === undefined) {
-      normalizedMeta.keepAlive = !normalizedMeta.noCache
-    }
-
-    if (route.component === 'InnerLink' && normalizedMeta.isIframe === undefined) {
-      normalizedMeta.isIframe = true
-    }
-
-    return {
-      ...route,
-      meta: normalizedMeta
-    }
   }
 
   /**
