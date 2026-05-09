@@ -344,6 +344,12 @@ declare namespace Api {
     /** 菜单新增/编辑参数 */
     type MenuPayload = Partial<MenuListItem>
 
+    /** 菜单排序参数 */
+    interface MenuSortPayload {
+      menuIds: string
+      orderNums: string
+    }
+
     /** 部门查询参数 */
     interface DeptQueryParams {
       deptName?: string

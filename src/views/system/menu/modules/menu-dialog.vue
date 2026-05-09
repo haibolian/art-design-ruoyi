@@ -1,129 +1,32 @@
 <template>
   <ElDialog
-    :title="dialogTitle"
     :model-value="visible"
+    :title="dialogTitle"
     width="720px"
     align-center
     destroy-on-close
     @update:model-value="handleVisibleChange"
     @closed="handleClosed"
   >
-    <ElForm ref="formRef" :model="form" :rules="rules" label-width="100px" v-loading="formLoading">
-      <ElRow :gutter="16">
-        <ElCol :span="24">
-          <ElFormItem label="上级菜单" prop="parentId">
-            <ElTreeSelect
-              v-model="form.parentId"
-              :data="menuOptions"
-              :props="treeProps"
-              value-key="menuId"
-              check-strictly
-              default-expand-all
-              placeholder="请选择上级菜单"
-            />
-          </ElFormItem>
-        </ElCol>
-
-        <ElCol :span="24">
-          <ElFormItem label="菜单类型" prop="menuType">
-            <ElRadioGroup v-model="form.menuType">
-              <ElRadio value="M">目录</ElRadio>
-              <ElRadio value="C">菜单</ElRadio>
-              <ElRadio value="F">按钮</ElRadio>
-            </ElRadioGroup>
-          </ElFormItem>
-        </ElCol>
-
-        <ElCol v-if="form.menuType !== 'F'" :span="12">
-          <ElFormItem label="菜单图标" prop="icon">
-            <ElInput v-model="form.icon" clearable placeholder="请输入图标名称，如 dashboard" />
-          </ElFormItem>
-        </ElCol>
-
-        <ElCol :span="12">
-          <ElFormItem label="显示排序" prop="orderNum">
-            <ElInputNumber
-              v-model="form.orderNum"
-              :min="0"
-              controls-position="right"
-              style="width: 100%"
-            />
-          </ElFormItem>
-        </ElCol>
-
-        <ElCol :span="12">
-          <ElFormItem label="菜单名称" prop="menuName">
-            <ElInput v-model="form.menuName" placeholder="请输入菜单名称" />
-          </ElFormItem>
-        </ElCol>
-
-        <ElCol v-if="form.menuType === 'C'" :span="12">
-          <ElFormItem label="路由名称" prop="routeName">
-            <ElInput v-model="form.routeName" clearable placeholder="请输入路由名称" />
-          </ElFormItem>
-        </ElCol>
-
-        <ElCol v-if="form.menuType !== 'F'" :span="12">
-          <ElFormItem label="是否外链" prop="isFrame">
-            <ElRadioGroup v-model="form.isFrame">
-              <ElRadio value="0">是</ElRadio>
-              <ElRadio value="1">否</ElRadio>
-            </ElRadioGroup>
-          </ElFormItem>
-        </ElCol>
-
-        <ElCol v-if="form.menuType !== 'F'" :span="12">
-          <ElFormItem label="路由地址" prop="path">
-            <ElInput v-model="form.path" placeholder="请输入路由地址" />
-          </ElFormItem>
-        </ElCol>
-
-        <ElCol v-if="form.menuType === 'C'" :span="12">
-          <ElFormItem label="组件路径" prop="component">
-            <ElInput v-model="form.component" placeholder="请输入组件路径（如 system/user/index）" />
-          </ElFormItem>
-        </ElCol>
-
-        <ElCol v-if="form.menuType !== 'M'" :span="12">
-          <ElFormItem label="权限字符" prop="perms">
-            <ElInput v-model="form.perms" clearable placeholder="请输入权限字符" />
-          </ElFormItem>
-        </ElCol>
-
-        <ElCol v-if="form.menuType === 'C'" :span="12">
-          <ElFormItem label="路由参数" prop="query">
-            <ElInput v-model="form.query" clearable placeholder='请输入路由参数，如 {"id":1}' />
-          </ElFormItem>
-        </ElCol>
-
-        <ElCol v-if="form.menuType === 'C'" :span="12">
-          <ElFormItem label="是否缓存" prop="isCache">
-            <ElRadioGroup v-model="form.isCache">
-              <ElRadio value="0">缓存</ElRadio>
-              <ElRadio value="1">不缓存</ElRadio>
-            </ElRadioGroup>
-          </ElFormItem>
-        </ElCol>
-
-        <ElCol v-if="form.menuType !== 'F'" :span="12">
-          <ElFormItem label="显示状态" prop="visible">
-            <ElRadioGroup v-model="form.visible">
-              <ElRadio value="0">显示</ElRadio>
-              <ElRadio value="1">隐藏</ElRadio>
-            </ElRadioGroup>
-          </ElFormItem>
-        </ElCol>
-
-        <ElCol :span="12">
-          <ElFormItem label="菜单状态" prop="status">
-            <ElRadioGroup v-model="form.status">
-              <ElRadio value="0">正常</ElRadio>
-              <ElRadio value="1">停用</ElRadio>
-            </ElRadioGroup>
-          </ElFormItem>
-        </ElCol>
-      </ElRow>
-    </ElForm>
+    <ArtForm
+      ref="formRef"
+      v-model="form"
+      :items="formItems"
+      :rules="rules"
+      :span="12"
+      :show-reset="false"
+      :show-submit="false"
+      label-width="100px"
+      v-loading="formLoading"
+    >
+      <template #icon>
+        <ElInput v-model="form.icon" clearable placeholder="请输入图标名称，如 ri:user-3-line">
+          <template #prefix>
+            <ArtSvgIcon v-if="form.icon" :icon="form.icon" class="text-g-600" />
+          </template>
+        </ElInput>
+      </template>
+    </ArtForm>
 
     <template #footer>
       <ElButton @click="handleCancel">取消</ElButton>
@@ -133,8 +36,28 @@
 </template>
 
 <script setup lang="ts">
-  import type { FormInstance, FormRules, FormItemRule } from 'element-plus'
-  import { fetchAddMenu, fetchGetMenuDetail, fetchUpdateMenu } from '@/api/system-manage'
+  import ArtSvgIcon from '@/components/core/base/art-svg-icon/index.vue'
+  import ArtForm, { type FormItem } from '@/components/core/forms/art-form/index.vue'
+  import { DICT_TYPE } from '@/types'
+  import type { FormRules, FormItemRule } from 'element-plus'
+  import {
+    fetchAddMenu,
+    fetchGetMenuDetail,
+    fetchGetMenuList,
+    fetchUpdateMenu
+  } from '@/api/system/menu'
+
+  interface Props {
+    visible: boolean
+    mode: 'add' | 'edit'
+    menuId: number | null
+    parentId: number
+  }
+
+  interface Emits {
+    (e: 'update:visible', value: boolean): void
+    (e: 'success'): void
+  }
 
   interface MenuTreeOption {
     menuId: number
@@ -160,31 +83,18 @@
     routeName: string
   }
 
-  interface Props {
-    visible: boolean
-    mode: 'add' | 'edit'
-    menuId: number | null
-    parentId: number
-    menuOptions: MenuTreeOption[]
-  }
-
-  interface Emits {
-    (e: 'update:visible', value: boolean): void
-    (e: 'success'): void
-  }
-
   const props = withDefaults(defineProps<Props>(), {
     visible: false,
     mode: 'add',
     menuId: null,
-    parentId: 0,
-    menuOptions: () => []
+    parentId: 0
   })
   const emit = defineEmits<Emits>()
 
-  const formRef = ref<FormInstance>()
+  const formRef = ref<InstanceType<typeof ArtForm>>()
   const formLoading = ref(false)
   const submitLoading = ref(false)
+  const menuOptions = ref<MenuTreeOption[]>([])
 
   const treeProps = {
     value: 'menuId',
@@ -212,40 +122,30 @@
 
   const form = reactive<MenuFormData>(createDefaultForm())
 
+  const radioOptions = {
+    menuType: [
+      { label: '目录', value: 'M' },
+      { label: '菜单', value: 'C' },
+      { label: '按钮', value: 'F' }
+    ],
+    isFrame: [
+      { label: '是', value: '0' },
+      { label: '否', value: '1' }
+    ],
+    isCache: [
+      { label: '缓存', value: '0' },
+      { label: '不缓存', value: '1' }
+    ]
+  } as const
+
   const validatePath: NonNullable<FormItemRule['validator']> = (_rule, value, callback) => {
     const current = typeof value === 'string' ? value : ''
     if (form.menuType === 'F') {
       callback()
       return
     }
-    if (!current || !current.trim()) {
+    if (!current.trim()) {
       callback(new Error('路由地址不能为空'))
-      return
-    }
-    callback()
-  }
-
-  const validateComponent: NonNullable<FormItemRule['validator']> = (_rule, value, callback) => {
-    const current = typeof value === 'string' ? value : ''
-    if (form.menuType !== 'C') {
-      callback()
-      return
-    }
-    if (!current || !current.trim()) {
-      callback(new Error('组件路径不能为空'))
-      return
-    }
-    callback()
-  }
-
-  const validatePerms: NonNullable<FormItemRule['validator']> = (_rule, value, callback) => {
-    const current = typeof value === 'string' ? value : ''
-    if (form.menuType === 'M') {
-      callback()
-      return
-    }
-    if (!current || !current.trim()) {
-      callback(new Error('权限字符不能为空'))
       return
     }
     callback()
@@ -254,65 +154,234 @@
   const rules: FormRules<MenuFormData> = {
     menuName: [{ required: true, message: '菜单名称不能为空', trigger: 'blur' }],
     orderNum: [{ required: true, message: '显示排序不能为空', trigger: 'blur' }],
-    path: [{ validator: validatePath, trigger: 'blur' }],
-    component: [{ validator: validateComponent, trigger: 'blur' }],
-    perms: [{ validator: validatePerms, trigger: 'blur' }]
+    path: [{ validator: validatePath, trigger: 'blur' }]
   }
+
+  const formItems = computed<FormItem[]>(() => [
+    {
+      key: 'parentId',
+      label: '上级菜单',
+      type: 'treeselect',
+      span: 24,
+      props: {
+        data: menuOptions.value,
+        props: treeProps,
+        valueKey: 'menuId',
+        checkStrictly: true,
+        defaultExpandAll: true,
+        placeholder: '请选择上级菜单'
+      }
+    },
+    {
+      key: 'menuType',
+      label: '菜单类型',
+      type: 'radiogroup',
+      span: 24,
+      props: {
+        options: radioOptions.menuType
+      }
+    },
+    {
+      key: 'icon',
+      label: '菜单图标',
+      type: 'input',
+      hidden: form.menuType === 'F'
+    },
+    {
+      key: 'orderNum',
+      label: '显示排序',
+      type: 'number',
+      props: {
+        min: 0,
+        controlsPosition: 'right',
+        style: { width: '100%' }
+      }
+    },
+    {
+      key: 'menuName',
+      label: '菜单名称',
+      type: 'input',
+      props: {
+        placeholder: '请输入菜单名称'
+      }
+    },
+    {
+      key: 'routeName',
+      label: '路由名称',
+      type: 'input',
+      hidden: form.menuType !== 'C',
+      props: {
+        placeholder: '请输入路由名称'
+      }
+    },
+    {
+      key: 'isFrame',
+      label: '是否外链',
+      type: 'radiogroup',
+      hidden: form.menuType === 'F',
+      props: {
+        options: radioOptions.isFrame
+      }
+    },
+    {
+      key: 'path',
+      label: '路由地址',
+      type: 'input',
+      hidden: form.menuType === 'F',
+      props: {
+        placeholder: '请输入路由地址'
+      }
+    },
+    {
+      key: 'component',
+      label: '组件路径',
+      type: 'input',
+      hidden: form.menuType !== 'C',
+      props: {
+        placeholder: '请输入组件路径，如 system/user/index'
+      }
+    },
+    {
+      key: 'perms',
+      label: '权限字符',
+      type: 'input',
+      hidden: form.menuType === 'M',
+      props: {
+        placeholder: '请输入权限字符'
+      }
+    },
+    {
+      key: 'query',
+      label: '路由参数',
+      type: 'input',
+      hidden: form.menuType !== 'C',
+      props: {
+        placeholder: '请输入路由参数，如 {\"id\":1}'
+      }
+    },
+    {
+      key: 'isCache',
+      label: '是否缓存',
+      type: 'radiogroup',
+      hidden: form.menuType !== 'C',
+      props: {
+        options: radioOptions.isCache
+      }
+    },
+    {
+      key: 'visible',
+      label: '显示状态',
+      type: 'dict-radio-group',
+      hidden: form.menuType === 'F',
+      props: {
+        dictType: DICT_TYPE.SHOW_HIDE
+      }
+    },
+    {
+      key: 'status',
+      label: '菜单状态',
+      type: 'dict-radio-group',
+      props: {
+        dictType: DICT_TYPE.NORMAL_DISABLE
+      }
+    }
+  ])
 
   const dialogTitle = computed(() => (props.mode === 'edit' ? '编辑菜单' : '新增菜单'))
 
-  const normalizeText = (value: string): string | undefined => {
-    const text = value.trim()
+  const normalizeText = (value?: string) => {
+    const text = value?.trim()
     return text ? text : undefined
   }
 
-  const resetFormData = (): void => {
+  const resetFormData = () => {
     Object.assign(form, createDefaultForm())
+    menuOptions.value = []
   }
 
-  const loadEditData = async (menuId: number): Promise<void> => {
+  const buildMenuTree = (list: Api.SystemManage.MenuListItem[]): MenuTreeOption[] => {
+    const nodeMap = new Map<number, MenuTreeOption>()
+    const roots: MenuTreeOption[] = []
+
+    list.forEach((item) => {
+      if (typeof item.menuId !== 'number') return
+      nodeMap.set(item.menuId, {
+        menuId: item.menuId,
+        menuName: item.menuName || '未命名菜单',
+        children: []
+      })
+    })
+
+    list.forEach((item) => {
+      if (typeof item.menuId !== 'number') return
+      const node = nodeMap.get(item.menuId)
+      if (!node) return
+      const parentId = Number(item.parentId ?? 0)
+      if (parentId !== 0 && nodeMap.has(parentId)) {
+        nodeMap.get(parentId)!.children!.push(node)
+      } else {
+        roots.push(node)
+      }
+    })
+
+    return [
+      {
+        menuId: 0,
+        menuName: '主类目',
+        children: roots
+      }
+    ]
+  }
+
+  const loadMenuOptions = async () => {
+    const list = await fetchGetMenuList()
+    menuOptions.value = buildMenuTree(list)
+  }
+
+  const loadEditData = async (menuId: number) => {
+    const data = await fetchGetMenuDetail(menuId)
+    Object.assign(form, {
+      menuId: data.menuId,
+      parentId: data.parentId ?? 0,
+      menuName: data.menuName ?? '',
+      icon: data.icon ?? '',
+      menuType: data.menuType ?? 'M',
+      orderNum: Number(data.orderNum ?? 0),
+      isFrame: data.isFrame ?? '1',
+      isCache: data.isCache ?? '0',
+      visible: data.visible ?? '0',
+      status: data.status ?? '0',
+      path: data.path ?? '',
+      component: data.component ?? '',
+      query: data.query ?? '',
+      perms: data.perms ?? '',
+      routeName: data.routeName ?? ''
+    })
+  }
+
+  const initializeForm = async () => {
     formLoading.value = true
     try {
-      const data = await fetchGetMenuDetail(menuId)
-      Object.assign(form, {
-        menuId: data.menuId,
-        parentId: data.parentId ?? 0,
-        menuName: data.menuName ?? '',
-        icon: data.icon ?? '',
-        menuType: data.menuType ?? 'M',
-        orderNum: data.orderNum ?? 0,
-        isFrame: data.isFrame ?? '1',
-        isCache: data.isCache ?? '0',
-        visible: data.visible ?? '0',
-        status: data.status ?? '0',
-        path: data.path ?? '',
-        component: data.component ?? '',
-        query: data.query ?? '',
-        perms: data.perms ?? '',
-        routeName: data.routeName ?? ''
-      })
+      resetFormData()
+      await loadMenuOptions()
+
+      if (props.mode === 'add') {
+        form.parentId = props.parentId ?? 0
+        return
+      }
+
+      if (props.menuId === null) {
+        throw new Error('编辑菜单时缺少 menuId')
+      }
+
+      await loadEditData(props.menuId)
     } finally {
       formLoading.value = false
     }
   }
 
-  const initializeForm = async (): Promise<void> => {
-    resetFormData()
-
-    if (props.mode === 'add') {
-      form.parentId = props.parentId ?? 0
-      return
-    }
-
-    if (props.menuId === null) {
-      throw new Error('编辑菜单时缺少 menuId')
-    }
-
-    await loadEditData(props.menuId)
-  }
-
   const buildPayload = (): Api.SystemManage.MenuPayload => {
-    const payload: Api.SystemManage.MenuPayload = {
+    return {
       menuId: form.menuId,
       parentId: form.parentId,
       menuName: form.menuName.trim(),
@@ -329,18 +398,11 @@
       perms: form.menuType === 'M' ? undefined : normalizeText(form.perms),
       routeName: form.menuType === 'C' ? normalizeText(form.routeName) : undefined
     }
-
-    return payload
   }
 
-  const handleSubmit = async (): Promise<void> => {
-    if (!formRef.value) {
-      return
-    }
-
-    await formRef.value.validate()
+  const handleSubmit = async () => {
+    await formRef.value?.validate()
     submitLoading.value = true
-
     try {
       const payload = buildPayload()
       if (props.mode === 'edit') {
@@ -351,7 +413,6 @@
       } else {
         await fetchAddMenu(payload)
       }
-
       ElMessage.success(props.mode === 'edit' ? '修改成功' : '新增成功')
       emit('success')
       emit('update:visible', false)
@@ -360,25 +421,23 @@
     }
   }
 
-  const handleCancel = (): void => {
+  const handleCancel = () => {
     emit('update:visible', false)
   }
 
-  const handleVisibleChange = (value: boolean): void => {
+  const handleVisibleChange = (value: boolean) => {
     emit('update:visible', value)
   }
 
-  const handleClosed = (): void => {
-    formRef.value?.resetFields()
+  const handleClosed = () => {
+    formRef.value?.ref?.resetFields()
     resetFormData()
   }
 
   watch(
     () => props.visible,
     async (visible) => {
-      if (!visible) {
-        return
-      }
+      if (!visible) return
       await initializeForm()
     }
   )

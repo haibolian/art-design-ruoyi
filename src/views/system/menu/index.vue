@@ -1,282 +1,180 @@
 <template>
-  <div class="menu-page art-full-height">
-    <ArtSearchBar
-      v-model="formFilters"
-      :items="formItems"
-      :showExpand="false"
-      @reset="handleReset"
-      @search="handleSearch"
-    />
-
-    <ElCard class="art-table-card" shadow="never">
-      <ArtTableToolbar
-        :showZebra="false"
-        :loading="loading"
-        v-model:columns="columnChecks"
-        @refresh="handleRefresh"
-      >
-        <template #left>
-          <ElButton v-auth="'system:menu:add'" @click="handleAddRoot" v-ripple>新增菜单</ElButton>
+  <div class="art-full-height">
+    <ProTable
+      :key="tableKey"
+      ref="proTableRef"
+      row-key="menuId"
+      :request="requestMenuList"
+      :columns="columns"
+      :table-props="tableProps"
+      :pagination-options="{ hideOnSinglePage: true }"
+      :use-table-options="{ responseAdapter: menuResponseAdapter, onSuccess: handleTableSuccess }"
+    >
+      <template #toolbar-left>
+        <ElSpace wrap>
+          <ElButton v-auth="'system:menu:add'" @click="openDialog('add')" v-ripple
+            >新增菜单</ElButton
+          >
+          <ElButton v-auth="'system:menu:edit'" @click="saveSort" v-ripple>保存排序</ElButton>
           <ElButton @click="toggleExpand" v-ripple>
             {{ isExpanded ? '收起' : '展开' }}
           </ElButton>
-        </template>
-      </ArtTableToolbar>
+        </ElSpace>
+      </template>
+    </ProTable>
 
-      <ArtTable
-        :key="tableKey"
-        ref="tableRef"
-        rowKey="menuId"
-        :loading="loading"
-        :columns="columns"
-        :data="tableData"
-        :stripe="false"
-        :tree-props="{ children: 'children', hasChildren: 'hasChildren' }"
-        :default-expand-all="isExpanded"
-      />
-
-      <MenuDialog
-        v-model:visible="dialogVisible"
-        :mode="dialogMode"
-        :menu-id="currentMenuId"
-        :parent-id="currentParentId"
-        :menu-options="menuOptions"
-        @success="handleDialogSuccess"
-      />
-    </ElCard>
+    <MenuDialog
+      v-model:visible="dialogVisible"
+      :mode="dialogMode"
+      :menu-id="currentMenuId"
+      :parent-id="currentParentId"
+      @success="handleDialogSuccess"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
   import ArtButtonTable from '@/components/core/forms/art-button-table/index.vue'
-  import { useTableColumns } from '@/hooks/core/useTableColumns'
-  import { fetchDeleteMenu, fetchGetMenuList } from '@/api/system-manage'
-  import { useAuth } from '@/hooks/core/useAuth'
+  import ArtSvgIcon from '@/components/core/base/art-svg-icon/index.vue'
   import MenuDialog from './modules/menu-dialog.vue'
-  import { ElTag, ElMessageBox } from 'element-plus'
+  import type { ProTableColumn, ProTableExpose } from '@/types/component'
+  import { fetchDeleteMenu, fetchGetMenuList, fetchUpdateMenuSort } from '@/api/system/menu'
+  import { useAuth } from '@/hooks/core/useAuth'
+  import { ElInputNumber, ElTag, ElMessageBox } from 'element-plus'
 
   defineOptions({ name: 'Menus' })
 
   type MenuListItem = Api.SystemManage.MenuListItem
-  type MenuType = Api.SystemManage.MenuType
+  type DialogMode = 'add' | 'edit'
   type TagType = 'primary' | 'success' | 'warning' | 'info' | 'danger'
-
-  interface MenuSearchState {
-    menuName: string
-    status: '' | '0' | '1'
-  }
-
-  interface MenuTreeOption {
-    menuId: number
-    menuName: string
-    children?: MenuTreeOption[]
-  }
 
   const { hasAuth } = useAuth()
 
-  const loading = ref(false)
-  const tableRef = ref()
-  const tableKey = ref(0)
-  const isExpanded = ref(false)
-
+  const proTableRef = ref<ProTableExpose<MenuListItem> | null>(null)
   const dialogVisible = ref(false)
-  const dialogMode = ref<'add' | 'edit'>('add')
+  const dialogMode = ref<DialogMode>('add')
   const currentMenuId = ref<number | null>(null)
   const currentParentId = ref(0)
+  const isExpanded = ref(false)
+  const tableKey = ref(0)
+  const originalOrders = ref<Record<number, number | string | undefined>>({})
 
-  const initialSearchState: MenuSearchState = {
-    menuName: '',
-    status: ''
+  const tableProps = computed(() => ({
+    stripe: false,
+    defaultExpandAll: isExpanded.value,
+    treeProps: { children: 'children', hasChildren: 'hasChildren' }
+  }))
+
+  const MENU_TYPE_META: Record<string, { text: string; type: TagType }> = {
+    M: { text: '目录', type: 'primary' },
+    C: { text: '菜单', type: 'success' },
+    F: { text: '按钮', type: 'warning' },
+    LINK: { text: '外链', type: 'danger' }
   }
 
-  const formFilters = reactive<MenuSearchState>({ ...initialSearchState })
-  const tableData = ref<MenuListItem[]>([])
-  const menuOptions = ref<MenuTreeOption[]>([])
-
-  const formItems = computed(() => [
-    {
-      label: '菜单名称',
-      key: 'menuName',
-      type: 'input',
-      props: { clearable: true, placeholder: '请输入菜单名称' }
-    },
-    {
-      label: '状态',
-      key: 'status',
-      type: 'select',
-      props: {
-        clearable: true,
-        placeholder: '请选择状态',
-        options: [
-          { label: '正常', value: '0' },
-          { label: '停用', value: '1' }
-        ]
-      }
-    }
-  ])
-
-  const MENU_TYPE_META: Record<MenuType, { text: string; type: TagType }> = {
-    M: { text: '目录', type: 'info' },
-    C: { text: '菜单', type: 'primary' },
-    F: { text: '按钮', type: 'warning' }
-  }
-
-  const STATUS_META: Record<'0' | '1', { text: string; type: TagType }> = {
-    '0': { text: '正常', type: 'success' },
-    '1': { text: '停用', type: 'danger' }
-  }
-
-  const { columnChecks, columns } = useTableColumns(() => [
+  const columns: ProTableColumn<MenuListItem, Api.SystemManage.MenuQueryParams>[] = [
     {
       prop: 'menuName',
       label: '菜单名称',
-      minWidth: 160,
-      formatter: (row: MenuListItem) => row.menuName || '-'
+      minWidth: 240,
+      search: {
+        props: {
+          placeholder: '请输入菜单名称'
+        }
+      },
+      cellRender: (row) =>
+        h('span', { class: 'inline-flex items-center gap-1' }, [
+          row.icon ? h(ArtSvgIcon, { icon: row.icon, class: 'text-base text-g-700' }) : null,
+          h('span', row.menuName || '-')
+        ])
     },
     {
       prop: 'menuType',
       label: '类型',
-      width: 90,
-      cellRender: (row: MenuListItem) => {
-        const menuType = (row.menuType || 'M') as MenuType
-        const meta = MENU_TYPE_META[menuType] || MENU_TYPE_META.M
+      width: 100,
+      cellRender: (row) => {
+        const key = row.menuType !== 'F' && row.isFrame === '0' ? 'LINK' : row.menuType || 'M'
+        const meta = MENU_TYPE_META[key] || MENU_TYPE_META.M
         return h(ElTag, { type: meta.type }, () => meta.text)
       }
     },
     {
-      prop: 'icon',
-      label: '图标',
-      minWidth: 120,
-      formatter: (row: MenuListItem) => row.icon || '-'
-    },
-    {
       prop: 'orderNum',
       label: '排序',
-      width: 80,
-      formatter: (row: MenuListItem) => `${row.orderNum ?? 0}`
+      width: 120,
+      cellRender: (row) => {
+        if (!hasAuth('system:menu:edit')) {
+          return h('span', row.orderNum != null ? String(row.orderNum) : '-')
+        }
+
+        return h(ElInputNumber, {
+          modelValue: Number(row.orderNum ?? 0),
+          min: 0,
+          controlsPosition: 'right',
+          style: { width: '88px' },
+          'onUpdate:modelValue': (value: number | undefined) => {
+            row.orderNum = value ?? 0
+          }
+        })
+      }
     },
     {
       prop: 'perms',
       label: '权限标识',
       minWidth: 180,
       showOverflowTooltip: true,
-      formatter: (row: MenuListItem) => row.perms || '-'
+      formatter: (row) => row.perms || '-'
     },
     {
       prop: 'component',
       label: '组件路径',
-      minWidth: 160,
+      minWidth: 180,
       showOverflowTooltip: true,
-      formatter: (row: MenuListItem) => row.component || '-'
+      formatter: (row) => row.component || '-'
     },
     {
       prop: 'status',
       label: '状态',
-      width: 90,
-      cellRender: (row: MenuListItem) => {
-        const status = (row.status || '0') as '0' | '1'
-        const meta = STATUS_META[status] || STATUS_META['0']
-        return h(ElTag, { type: meta.type }, () => meta.text)
+      width: 100,
+      dictType: 'sys_normal_disable',
+      valueType: 'dict-tag',
+      search: {
+        props: {
+          placeholder: '请选择状态'
+        }
       }
-    },
-    {
-      prop: 'createTime',
-      label: '创建时间',
-      minWidth: 160,
-      formatter: (row: MenuListItem) => row.createTime || '-'
     },
     {
       prop: 'operation',
       label: '操作',
-      width: 200,
+      width: 180,
       fixed: 'right',
-      align: 'right',
-      cellRender: (row: MenuListItem) => {
+      align: 'center',
+      cellRender: (row) => {
         const actions = []
 
-        if (hasAuth('system:menu:add') && row.menuType !== 'F') {
-          actions.push(
-            h(ArtButtonTable, {
-              type: 'add',
-              title: '新增',
-              onClick: () => handleAddChild(row)
-            })
-          )
+        if (hasAuth('system:menu:edit')) {
+          actions.push(h(ArtButtonTable, { type: 'edit', onClick: () => openDialog('edit', row) }))
         }
 
-        if (hasAuth('system:menu:edit')) {
-          actions.push(
-            h(ArtButtonTable, {
-              type: 'edit',
-              onClick: () => handleEdit(row)
-            })
-          )
+        if (hasAuth('system:menu:add') && row.menuType !== 'F') {
+          actions.push(h(ArtButtonTable, { type: 'add', onClick: () => openDialog('add', row) }))
         }
 
         if (hasAuth('system:menu:remove')) {
-          actions.push(
-            h(ArtButtonTable, {
-              type: 'delete',
-              onClick: () => handleDelete(row)
-            })
-          )
+          actions.push(h(ArtButtonTable, { type: 'delete', onClick: () => deleteMenu(row) }))
         }
 
-        if (actions.length === 0) {
-          return '-'
-        }
-
-        return h('div', { style: 'text-align: right' }, actions)
+        return actions.length ? h('div', { style: 'text-align: right' }, actions) : '-'
       }
     }
-  ])
+  ]
 
-  onMounted(() => {
-    getMenuList()
-  })
-
-  const normalizeSearchParams = (): Api.SystemManage.MenuQueryParams => {
-    const menuName = formFilters.menuName.trim()
-    const status = formFilters.status
-    const params: Api.SystemManage.MenuQueryParams = {}
-
-    if (menuName) {
-      params.menuName = menuName
-    }
-    if (status) {
-      params.status = status
-    }
-
-    return params
-  }
-
-  const getMenuList = async (): Promise<void> => {
-    loading.value = true
-    try {
-      const list = await fetchGetMenuList(normalizeSearchParams())
-      const normalizedList = normalizeMenuData(list)
-      tableData.value = normalizedList
-      menuOptions.value = buildMenuOptions(normalizedList)
-    } catch (error) {
-      throw error instanceof Error ? error : new Error('获取菜单失败')
-    } finally {
-      loading.value = false
-    }
-  }
-
-  const normalizeMenuData = (list: MenuListItem[]): MenuListItem[] => {
+  const assertMenuList = (list: MenuListItem[]): MenuListItem[] => {
     if (!Array.isArray(list)) {
-      return []
+      throw new Error('菜单列表接口返回值不符合约定：应为数组')
     }
-
-    const hasChildren = list.some(
-      (item) => Array.isArray(item.children) && item.children.length > 0
-    )
-    if (hasChildren) {
-      return list
-    }
-
-    return buildMenuTree(list)
+    return list
   }
 
   const buildMenuTree = (list: MenuListItem[]): MenuListItem[] => {
@@ -285,77 +183,79 @@
 
     list.forEach((item) => {
       if (typeof item.menuId !== 'number') {
-        return
+        throw new Error('菜单列表接口返回值不符合约定：menuId 必须为数字')
       }
-      nodeMap.set(item.menuId, {
-        ...item,
-        children: []
-      })
+      nodeMap.set(item.menuId, { ...item, children: [] })
     })
 
     list.forEach((item) => {
-      if (typeof item.menuId !== 'number') {
-        return
-      }
-
-      const node = nodeMap.get(item.menuId)
-      if (!node) {
-        return
-      }
-
+      const node = nodeMap.get(item.menuId!)
       const parentId = Number(item.parentId ?? 0)
-      if (parentId > 0 && nodeMap.has(parentId)) {
-        const parentNode = nodeMap.get(parentId)!
-        parentNode.children = parentNode.children || []
-        parentNode.children.push(node)
+      if (parentId !== 0 && nodeMap.has(parentId)) {
+        nodeMap.get(parentId)!.children!.push(node!)
       } else {
-        roots.push(node)
+        roots.push(node!)
       }
     })
 
     return roots
   }
 
-  const buildMenuOptions = (menuList: MenuListItem[]): MenuTreeOption[] => {
-    const root: MenuTreeOption = {
-      menuId: 0,
-      menuName: '主类目',
-      children: menuList.map(convertToTreeOption)
+  const recordOriginalOrders = (list: MenuListItem[]) => {
+    const nextOrders: Record<number, number | string | undefined> = {}
+
+    const collect = (nodes: MenuListItem[]) => {
+      nodes.forEach((item) => {
+        if (typeof item.menuId === 'number') {
+          nextOrders[item.menuId] = item.orderNum
+        }
+        if (Array.isArray(item.children) && item.children.length > 0) {
+          collect(item.children)
+        }
+      })
     }
-    return [root]
+
+    collect(list)
+    originalOrders.value = nextOrders
   }
 
-  const convertToTreeOption = (item: MenuListItem): MenuTreeOption => {
+  const menuResponseAdapter = (response: MenuListItem[]) => {
+    const tree = buildMenuTree(assertMenuList(response))
     return {
-      menuId: item.menuId ?? 0,
-      menuName: item.menuName || '未命名菜单',
-      children: (item.children || []).map(convertToTreeOption)
+      records: tree,
+      total: 0,
+      current: 1,
+      size: tree.length || 10
     }
   }
 
-  const openDialog = (mode: 'add' | 'edit', menuId: number | null, parentId: number): void => {
+  const handleTableSuccess = (data: MenuListItem[]) => {
+    recordOriginalOrders(data)
+  }
+
+  const requestMenuList = (params: Record<string, any>) => {
+    const nextParams: Api.SystemManage.MenuQueryParams = {}
+    if (params.menuName) {
+      nextParams.menuName = params.menuName
+    }
+    if (params.status) {
+      nextParams.status = params.status
+    }
+    return fetchGetMenuList(nextParams)
+  }
+
+  const getCurrentRows = () => {
+    return proTableRef.value?.data.value || []
+  }
+
+  const openDialog = (mode: DialogMode, row?: MenuListItem) => {
     dialogMode.value = mode
-    currentMenuId.value = menuId
-    currentParentId.value = parentId
+    currentMenuId.value = mode === 'edit' ? (row?.menuId ?? null) : null
+    currentParentId.value = mode === 'add' ? (row?.menuId ?? 0) : Number(row?.parentId ?? 0)
     dialogVisible.value = true
   }
 
-  const handleAddRoot = (): void => {
-    openDialog('add', null, 0)
-  }
-
-  const handleAddChild = (row: MenuListItem): void => {
-    openDialog('add', null, row.menuId ?? 0)
-  }
-
-  const handleEdit = (row: MenuListItem): void => {
-    if (typeof row.menuId !== 'number') {
-      throw new Error('菜单ID缺失，无法编辑')
-    }
-    openDialog('edit', row.menuId, row.parentId ?? 0)
-  }
-
-  const handleDelete = async (row: MenuListItem): Promise<void> => {
+  const deleteMenu = async (row: MenuListItem) => {
     if (typeof row.menuId !== 'number') {
       throw new Error('菜单ID缺失，无法删除')
     }
@@ -368,34 +268,53 @@
       })
       await fetchDeleteMenu(row.menuId)
       ElMessage.success('删除成功')
-      await getMenuList()
+      await proTableRef.value?.refreshData()
     } catch (error) {
-      if (error === 'cancel' || error === 'close') {
-        return
-      }
+      if (error === 'cancel' || error === 'close') return
       throw error
     }
   }
 
-  const handleDialogSuccess = async (): Promise<void> => {
+  const saveSort = async () => {
+    const changedMenuIds: number[] = []
+    const changedOrderNums: Array<number | string | undefined> = []
+
+    const collectChanged = (list: MenuListItem[]) => {
+      list.forEach((item) => {
+        if (
+          typeof item.menuId === 'number' &&
+          String(originalOrders.value[item.menuId]) !== String(item.orderNum)
+        ) {
+          changedMenuIds.push(item.menuId)
+          changedOrderNums.push(item.orderNum)
+        }
+        if (Array.isArray(item.children) && item.children.length > 0) {
+          collectChanged(item.children)
+        }
+      })
+    }
+
+    collectChanged(getCurrentRows())
+
+    if (changedMenuIds.length === 0) {
+      ElMessage.warning('未检测到排序修改')
+      return
+    }
+
+    await fetchUpdateMenuSort({
+      menuIds: changedMenuIds.join(','),
+      orderNums: changedOrderNums.map((item) => String(item ?? 0)).join(',')
+    })
+    ElMessage.success('排序保存成功')
+    recordOriginalOrders(getCurrentRows())
+  }
+
+  const handleDialogSuccess = async () => {
     dialogVisible.value = false
-    await getMenuList()
+    await proTableRef.value?.refreshData()
   }
 
-  const handleReset = async (): Promise<void> => {
-    Object.assign(formFilters, { ...initialSearchState })
-    await getMenuList()
-  }
-
-  const handleSearch = async (): Promise<void> => {
-    await getMenuList()
-  }
-
-  const handleRefresh = async (): Promise<void> => {
-    await getMenuList()
-  }
-
-  const toggleExpand = (): void => {
+  const toggleExpand = () => {
     isExpanded.value = !isExpanded.value
     tableKey.value += 1
   }
