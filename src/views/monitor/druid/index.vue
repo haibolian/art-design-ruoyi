@@ -7,7 +7,7 @@
 <script setup lang="ts">
   defineOptions({ name: 'Druid' })
 
-  const druidUrl = `${import.meta.env.VITE_API_URL}/druid/index.html`
+  const druidUrl = `${import.meta.env.VITE_API_URL}/druid/login.html`
 </script>
 
 <style scoped>
