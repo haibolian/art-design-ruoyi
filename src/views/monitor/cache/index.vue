@@ -67,8 +67,8 @@
 </template>
 
 <script setup lang="ts">
+  import { fetchGetCache } from '@/api/system/cache'
   import { echarts, type EChartsOption } from '@/plugins/echarts'
-  import { fetchGetCache } from '@/api/monitor'
 
   defineOptions({ name: 'Cache' })
 

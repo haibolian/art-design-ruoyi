@@ -19,7 +19,11 @@
             @row-click="loadCacheKeys"
           >
             <ElTableColumn type="index" label="序号" width="70" />
-            <ElTableColumn prop="cacheName" label="缓存名称" min-width="140" show-overflow-tooltip />
+            <ElTableColumn label="缓存名称" min-width="140" show-overflow-tooltip>
+              <template #default="{ row }">
+                {{ stripCacheNamePrefix(row.cacheName) }}
+              </template>
+            </ElTableColumn>
             <ElTableColumn prop="remark" label="备注" min-width="120" show-overflow-tooltip />
             <ElTableColumn label="操作" width="80" align="right">
               <template #default="{ row }">
@@ -49,7 +53,7 @@
           >
             <ElTableColumn type="index" label="序号" width="70" />
             <ElTableColumn label="缓存键名" min-width="220" show-overflow-tooltip>
-              <template #default="{ row }">{{ row }}</template>
+              <template #default="{ row }">{{ stripCacheKeyPrefix(row) }}</template>
             </ElTableColumn>
             <ElTableColumn label="操作" width="80" align="right">
               <template #default="{ row }">
@@ -71,17 +75,14 @@
               <ElButton text type="danger" @click="clearCacheAll">清理全部</ElButton>
             </div>
           </template>
-          <ElForm :model="cacheForm" label-width="90px">
-            <ElFormItem label="缓存名称">
-              <ElInput v-model="cacheForm.cacheName" readonly />
-            </ElFormItem>
-            <ElFormItem label="缓存键名">
-              <ElInput v-model="cacheForm.cacheKey" readonly />
-            </ElFormItem>
-            <ElFormItem label="缓存内容">
-              <ElInput v-model="cacheForm.cacheValue" type="textarea" :rows="10" readonly />
-            </ElFormItem>
-          </ElForm>
+          <ArtForm
+            v-model="cacheForm"
+            :items="formItems"
+            :show-reset="false"
+            :show-submit="false"
+            :span="24"
+            label-width="90px"
+          />
         </ElCard>
       </ElCol>
     </ElRow>
@@ -90,6 +91,7 @@
 
 <script setup lang="ts">
   import ArtButtonTable from '@/components/core/forms/art-button-table/index.vue'
+  import ArtForm, { type FormItem } from '@/components/core/forms/art-form/index.vue'
   import { ElMessage } from 'element-plus'
   import {
     fetchClearCacheAll,
@@ -98,7 +100,7 @@
     fetchGetCacheValue,
     fetchListCacheKey,
     fetchListCacheName
-  } from '@/api/monitor'
+  } from '@/api/system/cache'
 
   defineOptions({ name: 'CacheList' })
 
@@ -112,6 +114,36 @@
     cacheValue: undefined
   })
   const currentCacheName = ref<string>()
+
+  const formItems: FormItem[] = [
+    {
+      key: 'cacheName',
+      label: '缓存名称',
+      type: 'input',
+      props: { readonly: true }
+    },
+    {
+      key: 'cacheKey',
+      label: '缓存键名',
+      type: 'input',
+      props: { readonly: true }
+    },
+    {
+      key: 'cacheValue',
+      label: '缓存内容',
+      type: 'input',
+      props: {
+        type: 'textarea',
+        rows: 10,
+        readonly: true
+      }
+    }
+  ]
+
+  const stripCacheNamePrefix = (cacheName?: string) => cacheName?.replace(':', '') ?? ''
+
+  const stripCacheKeyPrefix = (cacheKey: string) =>
+    currentCacheName.value ? cacheKey.replace(currentCacheName.value, '') : cacheKey
 
   const loadCacheNames = async () => {
     loading.value = true
