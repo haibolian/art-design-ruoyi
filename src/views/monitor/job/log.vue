@@ -1,11 +1,6 @@
 <template>
   <div class="art-full-height">
-    <ProTable
-      ref="proTableRef"
-      :request="fetchJobLogList"
-      :columns="columns"
-      :immediate="false"
-    >
+    <ProTable ref="proTableRef" :request="fetchJobLogList" :columns="columns" :immediate="false">
       <template #toolbar-left="{ selectedRows }">
         <ElSpace wrap>
           <ElButton
@@ -17,24 +12,40 @@
             删除
           </ElButton>
           <ElButton v-auth="'monitor:job:remove'" @click="cleanJobLog" v-ripple>清空</ElButton>
+          <ElButton v-auth="'monitor:job:export'" @click="exportJobLog" v-ripple>导出</ElButton>
           <ElButton @click="closePage" v-ripple>关闭</ElButton>
         </ElSpace>
       </template>
     </ProTable>
 
-    <ElDialog v-model="detailVisible" title="调度日志详细" width="720px" align-center destroy-on-close>
+    <ElDialog
+      v-model="detailVisible"
+      title="调度日志详细"
+      width="820px"
+      align-center
+      destroy-on-close
+    >
       <ElDescriptions v-if="currentRow" :column="2" border>
         <ElDescriptionsItem label="日志序号">{{ currentRow.jobLogId }}</ElDescriptionsItem>
         <ElDescriptionsItem label="任务名称">{{ currentRow.jobName }}</ElDescriptionsItem>
         <ElDescriptionsItem label="任务分组">
           <ArtDictTag :dict-type="DICT_TYPE.JOB_GROUP" :value="currentRow.jobGroup" />
         </ElDescriptionsItem>
-        <ElDescriptionsItem label="执行时间">{{ currentRow.createTime }}</ElDescriptionsItem>
-        <ElDescriptionsItem label="调用方法" :span="2">{{ currentRow.invokeTarget }}</ElDescriptionsItem>
-        <ElDescriptionsItem label="日志信息" :span="2">{{ currentRow.jobMessage }}</ElDescriptionsItem>
         <ElDescriptionsItem label="执行状态">
           <ArtDictTag :dict-type="DICT_TYPE.COMMON_STATUS" :value="currentRow.status" />
         </ElDescriptionsItem>
+        <ElDescriptionsItem label="开始时间">{{ currentRow.startTime || '-' }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="结束时间">{{ currentRow.endTime || '-' }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="记录时间">{{ currentRow.createTime || '-' }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="执行耗时">
+          {{ getJobLogCostTime(currentRow) ?? '-' }}
+        </ElDescriptionsItem>
+        <ElDescriptionsItem label="调用方法" :span="2">{{
+          currentRow.invokeTarget
+        }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="日志信息" :span="2">{{
+          currentRow.jobMessage
+        }}</ElDescriptionsItem>
         <ElDescriptionsItem
           v-if="currentRow.status === 1 || currentRow.status === '1'"
           label="异常信息"
@@ -56,13 +67,15 @@
   import ArtDictTag from '@/components/core/display/art-dict-tag/index.vue'
   import { DICT_TYPE } from '@/types'
   import type { ProTableColumn, ProTableExpose } from '@/types/component'
+  import { createTimestampedFilename, downloadBlob } from '@/utils/file/download'
   import { ElMessage, ElMessageBox } from 'element-plus'
   import {
     fetchCleanJobLog,
     fetchDeleteJobLog,
+    fetchExportJobLog,
     fetchGetJobDetail,
     fetchGetJobLogList
-  } from '@/api/monitor'
+  } from '@/api/system/job'
   import { useAuth } from '@/hooks/core/useAuth'
 
   defineOptions({ name: 'JobLog' })
@@ -177,6 +190,11 @@
     detailVisible.value = true
   }
 
+  const getJobLogCostTime = (row: JobLogListItem) => {
+    if (!row.startTime || !row.endTime) return undefined
+    return new Date(row.endTime).getTime() - new Date(row.startTime).getTime()
+  }
+
   const getSelectedIds = () =>
     (proTableRef.value?.selectedRows ?? [])
       .map((item) => item.jobLogId)
@@ -190,11 +208,15 @@
     }
 
     try {
-      await ElMessageBox.confirm(`确认删除调度日志编号为 "${ids.join(',')}" 的数据吗？`, '删除确认', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      })
+      await ElMessageBox.confirm(
+        `确认删除调度日志编号为 "${ids.join(',')}" 的数据吗？`,
+        '删除确认',
+        {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          type: 'warning'
+        }
+      )
       await fetchDeleteJobLog(ids)
       ElMessage.success('删除成功')
       await proTableRef.value?.refreshRemove()
@@ -218,6 +240,36 @@
       if (error === 'cancel' || error === 'close') return
       throw error
     }
+  }
+
+  const getCurrentExportParams = (): Api.Monitor.JobLogSearchParams => {
+    const exposedModel = proTableRef.value?.searchModel as
+      | Record<string, any>
+      | { value: Record<string, any> }
+      | undefined
+    const model = exposedModel && 'value' in exposedModel ? exposedModel.value : exposedModel || {}
+    const params: Api.Monitor.JobLogSearchParams = {
+      ...jobFilter
+    }
+
+    if (model.jobName) params.jobName = model.jobName
+    if (model.jobGroup) params.jobGroup = model.jobGroup
+    if (model.status) params.status = model.status
+
+    const range = Array.isArray(model.createTimeRange) ? model.createTimeRange : []
+    if (range.length === 2) {
+      params.params = {
+        beginTime: range[0],
+        endTime: range[1]
+      }
+    }
+
+    return params
+  }
+
+  const exportJobLog = async () => {
+    const blob = await fetchExportJobLog(getCurrentExportParams())
+    downloadBlob(blob, createTimestampedFilename('job_log', 'xlsx'))
   }
 
   const closePage = () => {

@@ -7,14 +7,6 @@
             新增任务
           </ElButton>
           <ElButton
-            v-auth="'monitor:job:edit'"
-            :disabled="selectedRows.length !== 1"
-            @click="openDialog('edit', selectedRows[0])"
-            v-ripple
-          >
-            修改
-          </ElButton>
-          <ElButton
             v-auth="'monitor:job:remove'"
             :disabled="selectedRows.length === 0"
             @click="deleteJob()"
@@ -22,6 +14,7 @@
           >
             删除
           </ElButton>
+          <ElButton v-auth="'monitor:job:export'" @click="exportJob" v-ripple>导出</ElButton>
           <ElButton v-auth="'monitor:job:query'" @click="openJobLog()" v-ripple>日志</ElButton>
         </ElSpace>
       </template>
@@ -54,27 +47,47 @@
       </template>
     </ElDialog>
 
-    <ElDialog v-model="detailVisible" title="任务详细" width="720px" align-center destroy-on-close>
+    <ElDialog
+      v-model="cronDialogVisible"
+      title="Cron表达式生成器"
+      width="960px"
+      destroy-on-close
+      append-to-body
+    >
+      <JobCrontab
+        @hide="cronDialogVisible = false"
+        @fill="fillCronExpression"
+        :expression="cronExpression"
+      />
+    </ElDialog>
+
+    <ElDialog v-model="detailVisible" title="任务详细" width="820px" align-center destroy-on-close>
       <ElDescriptions v-if="currentRow" :column="2" border>
         <ElDescriptionsItem label="任务编号">{{ currentRow.jobId }}</ElDescriptionsItem>
         <ElDescriptionsItem label="任务名称">{{ currentRow.jobName }}</ElDescriptionsItem>
         <ElDescriptionsItem label="任务分组">
           <ArtDictTag :dict-type="DICT_TYPE.JOB_GROUP" :value="currentRow.jobGroup" />
         </ElDescriptionsItem>
-        <ElDescriptionsItem label="创建时间">{{ currentRow.createTime }}</ElDescriptionsItem>
-        <ElDescriptionsItem label="Cron 表达式">{{ currentRow.cronExpression }}</ElDescriptionsItem>
-        <ElDescriptionsItem label="下次执行时间">{{ currentRow.nextValidTime }}</ElDescriptionsItem>
-        <ElDescriptionsItem label="调用目标方法" :span="2">
-          {{ currentRow.invokeTarget }}
-        </ElDescriptionsItem>
         <ElDescriptionsItem label="任务状态">
           <ArtDictTag :dict-type="DICT_TYPE.JOB_STATUS" :value="currentRow.status" />
+        </ElDescriptionsItem>
+        <ElDescriptionsItem label="Cron 表达式">{{ currentRow.cronExpression }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="下次执行时间">{{ currentRow.nextValidTime }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="执行策略">
+          {{ formatMisfirePolicy(currentRow.misfirePolicy) }}
         </ElDescriptionsItem>
         <ElDescriptionsItem label="是否并发">
           {{ formatConcurrent(currentRow.concurrent) }}
         </ElDescriptionsItem>
-        <ElDescriptionsItem label="执行策略">
-          {{ formatMisfirePolicy(currentRow.misfirePolicy) }}
+        <ElDescriptionsItem label="调用目标方法" :span="2">
+          {{ currentRow.invokeTarget }}
+        </ElDescriptionsItem>
+        <ElDescriptionsItem label="创建人">{{ currentRow.createBy || '-' }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="创建时间">{{ currentRow.createTime || '-' }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="更新人">{{ currentRow.updateBy || '-' }}</ElDescriptionsItem>
+        <ElDescriptionsItem label="更新时间">{{ currentRow.updateTime || '-' }}</ElDescriptionsItem>
+        <ElDescriptionsItem v-if="currentRow.remark" label="备注" :span="2">
+          {{ currentRow.remark }}
         </ElDescriptionsItem>
       </ElDescriptions>
 
@@ -86,27 +99,47 @@
 </template>
 
 <script setup lang="ts">
+  import ArtButtonMore from '@/components/core/forms/art-button-more/index.vue'
   import ArtButtonTable from '@/components/core/forms/art-button-table/index.vue'
   import ArtDictTag from '@/components/core/display/art-dict-tag/index.vue'
   import ArtForm, { type FormItem } from '@/components/core/forms/art-form/index.vue'
+  import JobCrontab from '@/components/monitor/job-crontab/index.vue'
   import { DICT_TYPE } from '@/types'
   import type { ProTableColumn, ProTableExpose } from '@/types/component'
-  import { ElMessage, ElMessageBox, ElSwitch, ElTooltip, type FormRules } from 'element-plus'
+  import { createTimestampedFilename, downloadBlob } from '@/utils/file/download'
+  import {
+    ElButton,
+    ElMessage,
+    ElMessageBox,
+    ElSwitch,
+    ElTooltip,
+    type FormRules
+  } from 'element-plus'
   import {
     fetchAddJob,
     fetchChangeJobStatus,
     fetchDeleteJob,
+    fetchExportJob,
     fetchGetJobDetail,
     fetchGetJobList,
     fetchRunJob,
     fetchUpdateJob
-  } from '@/api/monitor'
+  } from '@/api/system/job'
   import { useAuth } from '@/hooks/core/useAuth'
 
   defineOptions({ name: 'Job' })
 
   type JobListItem = Api.Monitor.JobListItem
   type DialogMode = 'add' | 'edit'
+  type JobAction = {
+    key: string
+    label: string
+    type?: 'edit' | 'delete' | 'view'
+    icon?: string
+    auth: string
+    color?: string
+    onClick: () => void
+  }
 
   const router = useRouter()
   const { hasAuth } = useAuth()
@@ -114,10 +147,12 @@
   const formRef = ref<InstanceType<typeof ArtForm>>()
   const dialogVisible = ref(false)
   const detailVisible = ref(false)
+  const cronDialogVisible = ref(false)
   const dialogMode = ref<DialogMode>('add')
   const formLoading = ref(false)
   const submitLoading = ref(false)
   const currentRow = ref<JobListItem>()
+  const cronExpression = ref('')
 
   const misfirePolicyText = {
     '0': '默认策略',
@@ -185,7 +220,18 @@
       label: 'Cron 表达式',
       type: 'input',
       span: 24,
-      props: { placeholder: '请输入 Cron 执行表达式' }
+      props: { placeholder: '请输入 Cron 执行表达式' },
+      slots: {
+        append: () =>
+          h(
+            ElButton,
+            {
+              type: 'primary',
+              onClick: openCronDialog
+            },
+            () => '生成表达式'
+          )
+      }
     },
     {
       key: 'status',
@@ -279,25 +325,79 @@
     {
       prop: 'operation',
       label: '操作',
-      width: 230,
+      width: 260,
       fixed: 'right',
       align: 'right',
       cellRender: (row) => {
-        const actions = []
-        if (hasAuth('monitor:job:edit')) {
-          actions.push(renderAction('修改', 'edit', () => openDialog('edit', row)))
-        }
-        if (hasAuth('monitor:job:remove')) {
-          actions.push(renderAction('删除', 'delete', () => deleteJob(row)))
-        }
-        if (hasAuth('monitor:job:changeStatus')) {
-          actions.push(renderAction('执行一次', undefined, () => runJob(row), 'ri:play-fill'))
-        }
-        if (hasAuth('monitor:job:query')) {
-          actions.push(renderAction('任务详细', 'view', () => openDetail(row)))
-          actions.push(renderAction('调度日志', undefined, () => openJobLog(row), 'ri:file-list-3-line'))
-        }
-        return actions.length ? h('div', { style: 'text-align: right' }, actions) : ''
+        const actions: JobAction[] = [
+          {
+            key: 'edit',
+            label: '修改',
+            type: 'edit',
+            auth: 'monitor:job:edit',
+            onClick: () => openDialog('edit', row)
+          },
+          {
+            key: 'delete',
+            label: '删除',
+            type: 'delete',
+            auth: 'monitor:job:remove',
+            onClick: () => deleteJob(row)
+          },
+          {
+            key: 'run',
+            label: '执行一次',
+            icon: 'ri:play-fill',
+            auth: 'monitor:job:changeStatus',
+            onClick: () => runJob(row)
+          },
+          {
+            key: 'detail',
+            label: '任务详细',
+            type: 'view',
+            auth: 'monitor:job:query',
+            onClick: () => openDetail(row)
+          },
+          {
+            key: 'log',
+            label: '调度日志',
+            icon: 'ri:file-list-3-line',
+            auth: 'monitor:job:query',
+            onClick: () => openJobLog(row)
+          }
+        ].filter((item) => hasAuth(item.auth))
+
+        if (actions.length === 0) return ''
+
+        const directActions = actions.slice(0, 3)
+        const moreActions = actions.slice(3)
+
+        return h(
+          'div',
+          {
+            style:
+              'text-align: right; display: inline-flex; align-items: center; justify-content: flex-end;'
+          },
+          [
+            ...directActions.map((action) =>
+              renderAction(action.label, action.type, action.onClick, action.icon)
+            ),
+            moreActions.length
+              ? h(ArtButtonMore, {
+                  list: moreActions.map((action) => ({
+                    key: action.key,
+                    label: action.label,
+                    icon: action.icon,
+                    color: action.color
+                  })),
+                  onClick: (item: { key: string | number }) => {
+                    const action = moreActions.find((candidate) => candidate.key === item.key)
+                    action?.onClick()
+                  }
+                })
+              : null
+          ]
+        )
       }
     }
   ]
@@ -315,6 +415,15 @@
         onClick
       })
     )
+
+  const openCronDialog = () => {
+    cronExpression.value = form.cronExpression || ''
+    cronDialogVisible.value = true
+  }
+
+  const fillCronExpression = (value: string) => {
+    form.cronExpression = value
+  }
 
   const resetForm = () => {
     Object.assign(form, createDefaultForm())
@@ -373,11 +482,15 @@
     }
 
     try {
-      await ElMessageBox.confirm(`确认删除定时任务编号为 "${ids.join(',')}" 的数据吗？`, '删除确认', {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      })
+      await ElMessageBox.confirm(
+        `确认删除定时任务编号为 "${ids.join(',')}" 的数据吗？`,
+        '删除确认',
+        {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          type: 'warning'
+        }
+      )
       await fetchDeleteJob(ids)
       ElMessage.success('删除成功')
       await proTableRef.value?.refreshRemove()
@@ -385,6 +498,26 @@
       if (error === 'cancel' || error === 'close') return
       throw error
     }
+  }
+
+  const getCurrentExportParams = (): Api.Monitor.JobSearchParams => {
+    const exposedModel = proTableRef.value?.searchModel as
+      | Record<string, any>
+      | { value: Record<string, any> }
+      | undefined
+    const model = exposedModel && 'value' in exposedModel ? exposedModel.value : exposedModel || {}
+    const params: Api.Monitor.JobSearchParams = {}
+
+    if (model.jobName) params.jobName = model.jobName
+    if (model.jobGroup) params.jobGroup = model.jobGroup
+    if (model.status) params.status = model.status
+
+    return params
+  }
+
+  const exportJob = async () => {
+    const blob = await fetchExportJob(getCurrentExportParams())
+    downloadBlob(blob, createTimestampedFilename('job', 'xlsx'))
   }
 
   const changeStatus = async (row: JobListItem) => {

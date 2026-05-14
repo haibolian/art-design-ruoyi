@@ -10,20 +10,28 @@
             </div>
           </template>
           <ElDescriptions :column="4" border>
-            <ElDescriptionsItem label="Redis版本">{{ cache.info?.redis_version }}</ElDescriptionsItem>
+            <ElDescriptionsItem label="Redis版本">{{
+              cache.info?.redis_version
+            }}</ElDescriptionsItem>
             <ElDescriptionsItem label="运行模式">
               {{ formatRedisMode(cache.info?.redis_mode) }}
             </ElDescriptionsItem>
             <ElDescriptionsItem label="端口">{{ cache.info?.tcp_port }}</ElDescriptionsItem>
-            <ElDescriptionsItem label="客户端数">{{ cache.info?.connected_clients }}</ElDescriptionsItem>
+            <ElDescriptionsItem label="客户端数">{{
+              cache.info?.connected_clients
+            }}</ElDescriptionsItem>
             <ElDescriptionsItem label="运行时间(天)">
               {{ cache.info?.uptime_in_days }}
             </ElDescriptionsItem>
-            <ElDescriptionsItem label="使用内存">{{ cache.info?.used_memory_human }}</ElDescriptionsItem>
+            <ElDescriptionsItem label="使用内存">{{
+              cache.info?.used_memory_human
+            }}</ElDescriptionsItem>
             <ElDescriptionsItem label="使用CPU">
               {{ formatCpu(cache.info?.used_cpu_user_children) }}
             </ElDescriptionsItem>
-            <ElDescriptionsItem label="内存配置">{{ cache.info?.maxmemory_human }}</ElDescriptionsItem>
+            <ElDescriptionsItem label="内存配置">{{
+              cache.info?.maxmemory_human
+            }}</ElDescriptionsItem>
             <ElDescriptionsItem label="AOF是否开启">
               {{ formatEnabled(cache.info?.aof_enabled) }}
             </ElDescriptionsItem>
@@ -91,7 +99,8 @@
     return value
   }
 
-  const formatCpu = (value?: string) => (value !== undefined ? Number.parseFloat(value).toFixed(2) : value)
+  const formatCpu = (value?: string) =>
+    value !== undefined ? Number.parseFloat(value).toFixed(2) : value
 
   const renderCharts = async () => {
     if (!cache.value.info) {

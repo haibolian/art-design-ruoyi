@@ -714,6 +714,8 @@ declare namespace Api {
       invokeTarget?: string
       jobMessage?: string
       exceptionInfo?: string
+      startTime?: string
+      endTime?: string
       status?: '0' | '1' | number
       [key: string]: any
     }
